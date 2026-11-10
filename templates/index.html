@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Operation Tracker</title>
+<style>
+  :root{
+    --bg:#070b12; --panel:#0d1420; --panel2:#111b2b; --line:#1d2b42;
+    --txt:#e6edf7; --mut:#7f93b0; --green:#19d98b; --red:#ff4d5e; --amber:#ffb020; --blue:#3ea6ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:1.04vw} /* 1920px wide => ~20px; scales on any 16:9 screen */
+  body{background:var(--bg);color:var(--txt);font-family:"Segoe UI",Roboto,Arial,sans-serif;
+       height:100vh;width:100vw;overflow:hidden;display:flex;flex-direction:column}
+  header{display:flex;align-items:center;justify-content:space-between;padding:.7rem 1.6rem;
+         background:#0b1422;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:.8rem;font-size:1.5rem;font-weight:700;letter-spacing:.04em}
+  .dot{width:.9rem;height:.9rem;border-radius:50%;background:var(--green);box-shadow:0 0 .8rem var(--green);animation:pulse 2s infinite}
+  .dot.bad{background:var(--red);box-shadow:0 0 .8rem var(--red)}
+  @keyframes pulse{50%{opacity:.35}}
+  .sub{color:var(--mut);font-size:.85rem;font-weight:400;letter-spacing:.08em}
+  .clock{text-align:right;font-variant-numeric:tabular-nums}
+  .clock .t{font-size:1.7rem;font-weight:700}.clock .d{color:var(--mut);font-size:.85rem}
+  nav{position:relative;display:flex;align-items:center;justify-content:space-between;padding:.55rem 1.6rem;
+      background:#0a111c;border-bottom:1px solid var(--line)}
+  nav .crumb{font-size:1.05rem;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+  nav .crumb b{color:var(--txt);font-weight:700}
+  nav .crumb em{font-style:normal;color:var(--blue);margin-left:.5rem}
+  nav .live{display:inline-flex;align-items:center;gap:.4rem;margin-right:.7rem;padding:.12rem .7rem;border-radius:.3rem;
+            background:rgba(255,77,94,.16);color:var(--red);font-weight:700;font-size:.85rem;letter-spacing:.16em}
+  nav .live i{width:.55rem;height:.55rem;border-radius:50%;background:var(--red);animation:pulse 1.4s infinite}
+  nav .cnt{font-size:.85rem;color:var(--mut);letter-spacing:.1em;font-variant-numeric:tabular-nums}
+  nav .prog{position:absolute;left:0;bottom:0;height:.14rem;width:100%;background:var(--blue);
+            transform-origin:left;transform:scaleX(0);opacity:.7}
+  @keyframes prog{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .tight td,.tight th{padding-left:.35rem;padding-right:.35rem;font-size:.88rem}
+  .tight td.c-item{max-width:15rem}.tight td.c-vendor{max-width:10rem}.tight td.c-note{max-width:11.5rem}
+  #banner{display:none;align-items:center;gap:1rem;padding:.45rem 1.6rem;background:#3a1219;border-bottom:1px solid var(--red);
+          color:#ffd6da;font-size:1.05rem;animation:pulse 2.2s infinite}
+  #banner b{color:var(--red);letter-spacing:.14em;white-space:nowrap}
+  #pop{display:none;position:fixed;inset:0;z-index:50;background:rgba(3,6,12,.84);align-items:center;justify-content:center}
+  .popcard{min-width:40rem;max-width:62rem;background:#1a0d12;border:2px solid var(--red);border-radius:1rem;padding:1.6rem 2.2rem;
+           box-shadow:0 0 3rem rgba(255,77,94,.35)}
+  .pophead{font-size:2rem;font-weight:800;color:var(--red);letter-spacing:.16em;margin-bottom:.6rem}
+  .popitem{font-size:1.5rem;margin:.9rem 0;display:flex;flex-direction:column;gap:.25rem}
+  .popitem span{font-size:.95rem;color:var(--mut)}
+  .pophint{margin-top:1rem;color:var(--mut);font-size:.85rem}
+  body.lite *{animation:none!important;transition:none!important}
+  main{flex:1;position:relative;padding:1rem 1.6rem;min-height:0}
+  .page{position:absolute;inset:1rem 1.6rem;display:none;gap:1rem;animation:fade .3s}
+  .page.on{display:grid}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:.7rem;padding:.9rem 1.1rem;min-height:0;overflow:hidden}
+  .card h2{font-size:.9rem;font-weight:600;letter-spacing:.12em;color:var(--mut);text-transform:uppercase;margin-bottom:.6rem;
+           display:flex;justify-content:space-between;align-items:center}
+  .card h2 b{color:var(--txt);font-size:.85rem}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:1rem}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:.7rem;padding:.8rem 1rem;position:relative;overflow:hidden}
+  .kpi .l{color:var(--mut);font-size:.8rem;letter-spacing:.1em;text-transform:uppercase}
+  .kpi .v{font-size:2.6rem;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
+  .kpi .s{font-size:.85rem;color:var(--mut)}
+  .kpi::after{content:"";position:absolute;left:0;top:0;bottom:0;width:.28rem;background:var(--c,var(--blue))}
+  .g{color:var(--green)}.r{color:var(--red)}.a{color:var(--amber)}.b{color:var(--blue)}
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:.95rem}
+  th{text-align:left;color:var(--mut);font-weight:600;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;
+     padding:.35rem .5rem;border-bottom:1px solid var(--line)}
+  td{padding:.42rem .5rem;border-bottom:1px solid #121d2e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22rem}
+  td.wrap{white-space:normal}
+  tr.od td{background:rgba(255,77,94,.07)}
+  .chip{display:inline-block;padding:.08rem .6rem;border-radius:1rem;font-size:.78rem;font-weight:600}
+  .chip.High,.chip.red{background:rgba(255,77,94,.16);color:var(--red)}
+  .chip.Medium,.chip.amber{background:rgba(255,176,32,.16);color:var(--amber)}
+  .chip.Low,.chip.green{background:rgba(25,217,139,.16);color:var(--green)}
+  .chip.blue,.chip.Ongoing{background:rgba(62,166,255,.16);color:var(--blue)}
+  .chip.Open{background:#1b2840;color:#b9c8e0}
+  .bar{height:.55rem;background:#16233a;border-radius:1rem;overflow:hidden;min-width:7rem}
+  .bar i{display:block;height:100%;border-radius:1rem}
+  .empty{color:var(--mut);padding:1rem;text-align:center}
+  svg text{fill:var(--mut);font-size:11px;font-family:inherit}
+  /* footer */
+  footer{border-top:1px solid var(--line);background:#0a111c}
+  .tip{display:flex;align-items:center;gap:1rem;padding:.55rem 1.6rem;background:linear-gradient(90deg,#10301f,#0a111c 70%);font-size:1.1rem}
+  .tip b{color:var(--green);letter-spacing:.12em;font-size:.8rem;white-space:nowrap}
+  .ticker{overflow:hidden;white-space:nowrap;padding:.45rem 0;background:#060a11;border-top:1px solid var(--line)}
+  .track{display:inline-block;padding-left:100%;will-change:transform;animation:scroll var(--dur,60s) linear infinite}
+  @keyframes scroll{to{transform:translateX(-100%)}}
+  .tk{display:inline-flex;align-items:center;gap:.5rem;margin-right:3rem;font-size:1rem}
+  .err{position:fixed;right:1rem;bottom:5.5rem;background:#3a1219;border:1px solid var(--red);padding:.4rem .8rem;border-radius:.4rem;font-size:.8rem;display:none}
+  .badge{font-size:.7rem;padding:.1rem .5rem;border-radius:.3rem;background:#2a1f05;color:var(--amber);margin-left:.8rem;letter-spacing:.1em}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot" id="dot"></span>SUNRISE OPERATIONS<span class="badge" id="demo" style="display:none">DEMO DATA</span></div>
+  <div class="clock"><div class="t" id="time">--:--:--</div><div class="d" id="date"></div></div>
+</header>
+<nav id="nav"></nav>
+<div id="banner"></div>
+<main id="main"></main>
+<footer>
+  <div class="tip"><b>SAFETY TIP OF THE DAY</b><span id="tip">—</span></div>
+  <div class="ticker"><div class="track" id="track"></div></div>
+</footer>
+<div class="err" id="err"></div>
+<div id="pop"></div>
+
+<script>
+const PAGES = ["Overview","Task Tracker","Procurement (IPR \u2192 PO)","Helpdesk Complaints","Events & Follow-ups","Escalation Matrix","Alerts"];
+const ROTATE_MS = 20000;
+const qs = new URLSearchParams(location.search);
+let data = null, page = Math.max(0, Math.min(PAGES.length-1, (parseInt(qs.get("page"))||1)-1));
+const rotate = qs.get("rotate") !== "0";
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const inr = n => "₹" + Number(n||0).toLocaleString("en-IN");
+const chip = (t, cls) => `<span class="chip ${esc(cls||t)}">${esc(t)}</span>`;
+const empty = m => `<div class="empty">${m}</div>`;
+
+function table(cols, rows, rowCls){
+  if(!rows.length) return empty("Nothing pending 🎉");
+  return `<table><tr>${cols.map(c=>`<th>${c[0]}</th>`).join("")}</tr>` +
+    rows.map(r=>`<tr class="${rowCls?rowCls(r):""}">${cols.map(c=>`<td class="${c[2]||""}">${c[1](r)}</td>`).join("")}</tr>`).join("") + `</table>`;
+}
+
+/* ---------- charts (inline SVG, no external libraries) ---------- */
+function lineChart(points, target){
+  const W=900,H=300,L=44,R=14,T=14,B=28;
+  const vals = points.map(p=>p.value);
+  const max = Math.max(100, ...vals), min = 0;
+  const x = i => L + i*(W-L-R)/Math.max(1,points.length-1);
+  const y = v => T + (H-T-B)*(1-(v-min)/(max-min));
+  const up = vals[vals.length-1] >= vals[0], col = up ? "#19d98b" : "#ff4d5e";
+  const pts = points.map((p,i)=>`${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const area = `${L},${H-B} ${pts} ${x(points.length-1)},${H-B}`;
+  let grid="";
+  for(let g=0; g<=100; g+=25){ grid += `<line x1="${L}" x2="${W-R}" y1="${y(g)}" y2="${y(g)}" stroke="#1d2b42" stroke-dasharray="3 4"/><text x="6" y="${y(g)+4}">${g}%</text>`; }
+  const labels = points.map((p,i)=> i%2===0 ? `<text x="${x(i)}" y="${H-8}" text-anchor="middle">${p.label}</text>` : "").join("");
+  const last = points[points.length-1];
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="none">
+    <defs><linearGradient id="gA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".35"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+    ${grid}
+    <line x1="${L}" x2="${W-R}" y1="${y(target)}" y2="${y(target)}" stroke="#ffb020" stroke-dasharray="6 5"/>
+    <text x="${W-R-4}" y="${y(target)-5}" text-anchor="end" style="fill:#ffb020">TARGET ${target}%</text>
+    <polygon points="${area}" fill="url(#gA)"/>
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="3" stroke-linejoin="round"/>
+    <circle cx="${x(points.length-1)}" cy="${y(last.value)}" r="5" fill="${col}"></circle>
+    ${labels}</svg>`;
+}
+
+function ownerBars(owners){
+  if(!owners.length) return empty("No owner data");
+  return owners.map(o=>{
+    const c = o.pct>=80?"#19d98b":o.pct>=50?"#ffb020":"#ff4d5e";
+    return `<div style="display:grid;grid-template-columns:7rem 1fr 4.2rem 4.5rem;gap:.7rem;align-items:center;margin:.55rem 0;font-size:.95rem">
+      <span>${esc(o.owner)}</span><div class="bar"><i style="width:${o.pct}%;background:${c}"></i></div>
+      <b style="color:${c};text-align:right">${o.pct}%</b><span style="color:var(--mut);font-size:.8rem">${o.done}/${o.total}${o.overdue?` · <span class="r">${o.overdue}!</span>`:""}</span></div>`;
+  }).join("");
+}
+
+/* ---------- pages ---------- */
+function pOverview(d){
+  const k=d.kpis, pc = k.pct>=k.target?"g":k.pct>=k.target-20?"a":"r";
+  const tr = d.trend, delta = (tr[tr.length-1].value - tr[0].value).toFixed(1);
+  const tile = (l,v,s,c,cls)=>`<div class="kpi" style="--c:var(--${c})"><div class="l">${l}</div><div class="v ${cls}">${v}</div><div class="s">${s}</div></div>`;
+  const hasOps = k.complaints_open + k.events_upcoming + k.followups_pending > 0;   // hide modules that have no data
+  const tiles = [tile("Completion", k.pct+"%", `Target ${k.target}% \u00b7 ${k.completed}/${k.total} done`, "green", pc),
+                 tile("Overdue Tasks", k.overdue, `${k.open} open \u00b7 ${k.ongoing} ongoing`, "red", k.overdue?"r":"g"),
+                 tile("PO Awaited", k.po_pending, lakh(k.po_value), "amber", "a")];
+  if(hasOps) tiles.push(tile("Open Complaints", k.complaints_open, `${k.complaints_high} high priority`, "red", k.complaints_high?"r":"b"),
+                        tile("Upcoming Events", k.events_upcoming, `${k.followups_pending} follow-ups pending`, "blue", "b"));
+  else tiles.push(tile("Ongoing / WIP", k.ongoing, `${k.open} not started`, "blue", "b"));
+  tiles.push(tile("Alerts Due", k.alerts_due, `${d.alerts.upcoming_count} coming in 7 days`, "red", k.alerts_due?"r":"g"),
+             tile("Escalations", k.escalations, "active right now", "red", k.escalations?"r":"g"));
+  return `<div style="display:grid;grid-template-rows:auto 1fr;gap:1rem;height:100%">
+   <div class="kpis" style="grid-template-columns:repeat(${tiles.length},1fr)">${tiles.join("")}</div>
+   <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:1rem;min-height:0">
+    <div class="card"><h2>Completion trend · 14 days <b class="${delta>=0?"g":"r"}">${delta>=0?"▲":"▼"} ${Math.abs(delta)} pts</b></h2><div style="height:calc(100% - 2rem)">${lineChart(tr,k.target)}</div></div>
+    <div class="card"><h2>Owner performance <b>sorted by completion</b></h2>${ownerBars(d.owners)}</div>
+   </div></div>`;
+}
+let taskOff = 0;
+function pTasks(d){
+  const all = d.tasks, per = 15, n = all.length;
+  if(taskOff >= n) taskOff = 0;
+  const rows = all.slice(taskOff, taskOff+per), active = d.kpis.open + d.kpis.ongoing;
+  return `<div class="card" style="height:100%"><h2>Open & overdue tasks <b>${d.kpis.overdue} overdue \u00b7 ${active} active${n>per?` \u00b7 showing ${taskOff+1}\u2013${taskOff+rows.length}`:""}</b></h2>` +
+   table([["ID",r=>esc(r.id)],["Task",r=>esc(r.task)],["Owner",r=>esc(r.owner)],["Priority",r=>chip(r.priority)],
+          ["Status",r=>chip(r.status)],["Due",r=>esc(r.due)],
+          ["Alert",r=>r.overdue?`<span class="r">\u25b2 ${r.days_over}d overdue</span>`:`<span class="g">on track</span>`]], rows, r=>r.overdue?"od":"") + `</div>`;
+}
+function pHelp(d){
+  return `<div class="card" style="height:100%"><h2>Helpdesk complaints <b>${d.kpis.complaints_open} open \u00b7 ${d.kpis.complaints_high} high priority</b></h2>` +
+   table([["Ticket",r=>esc(r.ticket)],["Date",r=>esc(r.date)],["Department",r=>esc(r.dept)],["Complaint",r=>esc(r.text)],
+          ["Assigned to",r=>esc(r.assigned)],["Priority",r=>chip(r.priority)],["Status",r=>chip(r.raw_status||r.status,r.status)],
+          ["Open for",r=>`<span class="${r.age_hours>=96?"r":r.age_hours>=48?"a":"g"}">${Math.floor(r.age_hours/24)}d</span>`]],
+          d.complaints, r=>r.priority==="High"?"od":"") + `</div>`;
+}
+function pEvents(d){
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;height:100%">
+   <div class="card"><h2>Upcoming events <b>${d.kpis.events_upcoming}</b></h2>` +
+   table([["Event",r=>esc(r.event)],["Date",r=>esc(r.date)],["In",r=>r.days===0?"<b class='r'>TODAY</b>":r.days+"d"],["Owner",r=>esc(r.owner)],
+          ["Preparation",r=>{const c=r.prep>=70?"#19d98b":r.prep>=40?"#ffb020":"#ff4d5e";return `<div class="bar"><i style="width:${r.prep}%;background:${c}"></i></div>`}]], d.events) + `</div>
+   <div class="card"><h2>Follow-up points <b>${d.kpis.followups_pending} pending</b></h2>` +
+   table([["Point",r=>esc(r.point),"wrap"],["Owner",r=>esc(r.owner)],["Due",r=>esc(r.due)],["",r=>r.overdue?chip("OVERDUE","red"):chip("pending","amber")]], d.followups, r=>r.overdue?"od":"") + `</div></div>`;
+}
+function pEsc(d){
+  return `<div style="display:grid;grid-template-columns:1fr 1.5fr;gap:1rem;height:100%">
+   <div class="card"><h2>Escalation matrix <b>deadline → who</b></h2>` +
+   table([["Priority",r=>chip(r.priority)],["Level",r=>"L"+r.level],["Escalate to",r=>esc(r.to)],["After",r=>r.hours>=48?(r.hours/24)+" d":r.hours+" h"]], d.matrix) + `</div>
+   <div class="card"><h2>Active escalations <b class="${d.escalations.length?"r":"g"}">${d.escalations.length}</b></h2>` +
+   table([["Type",r=>esc(r.kind)],["Ref",r=>esc(r.ref)],["Item",r=>esc(r.text)],["Owner",r=>esc(r.owner)],["Pri",r=>chip(r.priority)],
+          ["Level",r=>`<b class="r">L${r.level}</b> → ${esc(r.to)}`],["Age",r=>esc(r.age)]], d.escalations) + `</div></div>`;
+}
+const lakh = n => n>=1e7 ? "\u20b9"+(n/1e7).toFixed(2)+" Cr" : n>=1e5 ? "\u20b9"+(n/1e5).toFixed(1)+" L" : inr(n);
+function bars(list, key, color){
+  const mx = Math.max(1, ...list.map(x=>x.n));
+  return list.length ? list.map(x=>`<div style="display:grid;grid-template-columns:8.5rem 1fr 2.2rem;gap:.7rem;align-items:center;margin:.5rem 0;font-size:.92rem">
+    <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x[key])}</span>
+    <div class="bar"><i style="width:${Math.round(100*x.n/mx)}%;background:${color}"></i></div><b style="text-align:right">${x.n}</b></div>`).join("") : empty("Nothing awaited");
+}
+function pProc(d){
+  const p = d.ipr, rows = p.rows.slice(0,12);
+  const noPO = (p.stages.find(x=>x.stage==="Approved - no PO")||{n:0}).n;
+  const ageCls = a => a>30 ? "r" : a>14 ? "a" : "g";
+  return `<div style="display:grid;grid-template-rows:auto 1fr;gap:1rem;height:100%">
+   <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kpi" style="--c:var(--amber)"><div class="l">PO Awaited</div><div class="v a">${p.awaited}</div><div class="s">PO number blank</div></div>
+    <div class="kpi" style="--c:var(--amber)"><div class="l">Awaited Value</div><div class="v a" style="font-size:2.1rem;line-height:1.5">${lakh(p.awaited_value)}</div><div class="s">excl. GST</div></div>
+    <div class="kpi" style="--c:var(--blue)"><div class="l">Approved, PO not raised</div><div class="v b">${noPO}</div><div class="s">ready for PO creation</div></div>
+    <div class="kpi" style="--c:var(--red)"><div class="l">Waiting &gt; 30 days</div><div class="v ${p.over30?"r":"g"}">${p.over30}</div><div class="s">need follow-up</div></div>
+   </div>
+   <div style="display:grid;grid-template-columns:3fr 1fr;gap:1rem;min-height:0">
+    <div class="card"><h2>PO awaited \u00b7 oldest first <b>showing ${rows.length} of ${p.awaited}</b></h2>` +
+      `<div class="tight">` + table([["IPR",r=>esc(r.ref)],["Dept",r=>esc(r.dept)],["Item",r=>esc(r.item),"c-item"],["Vendor",r=>esc(r.vendor),"c-vendor"],
+             ["Amount",r=>r.amount?inr(r.amount):"\u2014"],["Age",r=>`<b class="${ageCls(r.age)}">${r.age}d</b>`],
+             ["PO",r=>chip("AWAITED","amber")],["Stage / update",r=>esc(r.note||r.stage),"c-note"]], rows, r=>r.age>30?"od":"") + `</div></div>
+    <div style="display:grid;grid-template-rows:1fr 1fr;gap:1rem;min-height:0">
+     <div class="card"><h2>Where is it stuck <b>${p.awaited}</b></h2>${bars(p.stages,"stage","#ffb020")}</div>
+     <div class="card"><h2>Department-wise awaited</h2>${bars(p.depts,"dept","#3ea6ff")}</div>
+    </div></div></div>`;
+}
+function pAlerts(d){
+  const a = d.alerts, rows = a.items.slice(0,12);
+  const mail = m => ({sent:'<span class="g">\u2713 e-mailed</span>', pending:'<span class="a">sending\u2026</span>',
+    scheduled:'<span style="color:var(--mut)">on alert date</span>', off:'<span style="color:var(--mut)">e-mail not set up</span>',
+    norecipient:'<span class="a">no e-mail id</span>', failed:'<span class="r">failed - retrying</span>',
+    skipped:'<span style="color:var(--mut)">too old to mail</span>'}[m] || esc(m));
+  return `<div style="display:grid;grid-template-rows:auto 1fr;gap:1rem;height:100%">
+   <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kpi" style="--c:var(--red)"><div class="l">Alerts Due</div><div class="v ${a.due_count?"r":"g"}">${a.due_count}</div><div class="s">due today or earlier</div></div>
+    <div class="kpi" style="--c:var(--blue)"><div class="l">Coming in 7 days</div><div class="v b">${a.upcoming_count}</div><div class="s">scheduled</div></div>
+    <div class="kpi" style="--c:var(--${a.mail_error?"red":a.mail_ready?"green":"amber"})"><div class="l">E-mail</div>
+      <div class="v ${a.mail_error?"r":a.mail_ready?"g":"a"}" style="font-size:1.8rem;line-height:1.8">${a.mail_error?"Problem":a.mail_ready?"Ready":"Not set up"}</div>
+      <div class="s">${esc(a.mail_error||(a.mail_ready?"sent once on the alert date":"on-screen alerts only"))}</div></div>
+   </div>
+   <div class="card"><h2>Alerts <b>${a.items.length} active</b></h2>` +
+   table([["Date",r=>esc(r.date)],["Time",r=>esc(r.time||"\u2014")],["Alert / task",r=>esc(r.text)],["Priority",r=>chip(r.priority)],
+          ["State",r=>chip(r.state, r.due?"red":"blue")],["Mail to",r=>esc(r.to||"default id")],["E-mail",r=>mail(r.mail)]], rows, r=>r.due?"od":"") + `</div></div>`;
+}
+const RENDER = [pOverview,pTasks,pProc,pHelp,pEvents,pEsc,pAlerts];
+const isEmpty = i => !data ? false : i===3 ? data.complaints.length===0 : i===4 ? (data.events.length===0 && data.followups.length===0) : i===6 ? data.alerts.items.length===0 : false;
+function nextPage(from, dir){                      // skip pages that have nothing to show
+  let p = from;
+  for(let n=0; n<PAGES.length; n++){ p = (p + dir + PAGES.length) % PAGES.length; if(!isEmpty(p)) return p; }
+  return from;
+}
+
+/* ---------- shell ---------- */
+let lastKey = "", dirty = new Set(), paused = false, holdUntil = 0, loading = false;
+if(qs.get("lite")==="1") document.body.classList.add("lite");
+
+function buildShell(){
+  $("nav").innerHTML = `<div class="crumb"><span class="live"><i></i>LIVE</span><b>Operation Tracker</b><em id="pname"></em></div>` +
+    `<div class="cnt" id="cnt"></div><i class="prog" id="prog"></i>`;
+  $("main").innerHTML = PAGES.map((_,i)=>`<section class="page" id="p${i}"><div class="empty">Loading&hellip;</div></section>`).join("");
+}
+function manual(i){ holdUntil = Date.now()+45000; show(i); }   // rotation resumes 45 s after the last click
+function togglePause(){ paused = !paused; show(page); }
+function renderPage(i){ if(!data) return; $("p"+i).innerHTML = RENDER[i](data); dirty.delete(i); }
+
+function renderAll(){
+  if(!data) return;
+  const key = JSON.stringify(data, (k,v)=> k==="updated" ? undefined : v);
+  if(key !== lastKey){                       // only touch the screen when something actually changed
+    lastKey = key;
+    dirty = new Set(PAGES.map((_,i)=>i));
+    renderPage(page);                        // other pages render lazily when shown
+    $("tip").textContent = data.tip || "Safety first — every task, every time.";
+    const items = data.ticker.length ? data.ticker : [{tag:"ALL CLEAR",cls:"green",text:"No overdue items"}];
+    const tr = $("track");
+    tr.innerHTML = items.map(t=>`<span class="tk"><span class="chip ${t.cls}">${esc(t.tag)}</span>${esc(t.text)}</span>`).join("");
+    tr.style.setProperty("--dur", Math.max(30, items.length*9)+"s");
+  }
+  const due = data.alerts.due, bn = $("banner");
+  if(due.length){
+    bn.style.display = "flex";
+    bn.innerHTML = `<b>\u26a0 ALERT</b><span>${due.slice(0,3).map(x=>esc(x.text)).join(" &nbsp;\u2022&nbsp; ")}${data.alerts.due_count>3?` &nbsp; +${data.alerts.due_count-3} more`:""}</span>`;
+  } else bn.style.display = "none";
+  checkPopup();
+  if(isEmpty(page)) show(nextPage(page, 1));
+  $("demo").style.display = data.source==="demo" ? "inline-block" : "none";
+  $("dot").className = "dot" + (data.error ? " bad" : "");
+  const e = $("err");
+  if(data.error){ e.textContent = "Data refresh issue: " + data.error; e.style.display = "block"; } else e.style.display = "none";
+}
+const seenAlerts = new Set(); let popTimer = null;
+function checkPopup(){                              // pop up each newly due alert once
+  const fresh = data.alerts.due.filter(x=>!seenAlerts.has(x.key));
+  if(!fresh.length) return;
+  fresh.forEach(x=>seenAlerts.add(x.key));
+  $("pop").innerHTML = `<div class="popcard"><div class="pophead">\u26a0 ALERT</div>` +
+    fresh.slice(0,5).map(x=>`<div class="popitem"><b>${esc(x.text)}</b><span>${esc(x.date)}${x.time?" "+esc(x.time):""} \u00b7 ${chip(x.priority)}</span></div>`).join("") +
+    (fresh.length>5?`<div class="pophint">+${fresh.length-5} more on the Alerts page</div>`:"") +
+    `<div class="pophint">Press any key or click to close</div></div>`;
+  $("pop").style.display = "flex"; clearTimeout(popTimer); popTimer = setTimeout(closePop, 30000);
+}
+function closePop(){ $("pop").style.display = "none"; }
+$("pop").addEventListener("click", closePop);
+function show(i){
+  page = i;
+  if(dirty.has(i) || i===1) renderPage(i);
+  PAGES.forEach((_,j)=>{ $("p"+j).classList.toggle("on", j===i); });
+  $("pname").textContent = "\u203a " + PAGES[i];
+  $("cnt").textContent = (paused ? "PAUSED \u00b7 " : "") + (i+1) + " / " + PAGES.length;
+  const pr = $("prog");                                   // thin line = time until the next page
+  pr.style.animation = "none"; void pr.offsetWidth;
+  pr.style.animation = (rotate && !paused) ? "prog " + ROTATE_MS + "ms linear forwards" : "none";
+  pr.style.transform = (rotate && !paused) ? "" : "scaleX(0)";
+}
+async function load(){
+  if(loading) return; loading = true;
+  const ctl = new AbortController(), to = setTimeout(()=>ctl.abort(), 15000);
+  try{
+    const r = await fetch("/api/data", {cache:"no-store", signal:ctl.signal});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    data = await r.json(); renderAll();
+  }catch(e){
+    $("dot").className = "dot bad"; $("err").textContent = "Connection issue — showing last data ("+e.message+")"; $("err").style.display = "block";
+  }finally{ clearTimeout(to); loading = false; }
+}
+let lastDate = "";
+function tick(){
+  const n = new Date();
+  $("time").textContent = n.toLocaleTimeString("en-GB");
+  const d = n.toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}) + (data ? "  ·  updated "+data.updated : "");
+  if(d !== lastDate){ $("date").textContent = d; lastDate = d; }
+}
+document.addEventListener("keydown", e=>{            // also works with the Samsung TV remote arrows / OK button
+  if($("pop").style.display==="flex"){ closePop(); return; }
+  if(e.key==="ArrowRight") manual(nextPage(page, 1));
+  else if(e.key==="ArrowLeft") manual(nextPage(page, -1));
+  else if(e.key===" " || e.key==="Enter"){ e.preventDefault(); togglePause(); }
+  else if(/^[1-9]$/.test(e.key) && +e.key<=PAGES.length) manual(+e.key-1);
+});
+buildShell(); show(page); load(); tick();
+setInterval(tick, 1000);
+setInterval(()=>{                                  // long task lists: flip to the next 15 every 10 s
+  if(!data || data.tasks.length <= 15) return;
+  taskOff = (taskOff + 15 >= data.tasks.length) ? 0 : taskOff + 15;
+  if(page === 1) renderPage(1);
+}, 10000);
+setInterval(load, 60000);                       // refresh every 60 s
+if(rotate) setInterval(()=>{ if(paused || Date.now() < holdUntil) return; show(nextPage(page, 1)); }, ROTATE_MS);
+</script>
+</body>
+</html>
