@@ -341,6 +341,8 @@ def strip_private(rows):
 def build_tasks(rows, today):
     tasks = []
     for r in rows:
+        if not str(r.get("Task") or "").strip():     # pre-numbered empty rows are not tasks
+            continue
         due, done = pdate(r.get("Due Date")), pdate(r.get("Completed Date"))
         st = norm_status(r.get("Status"))
         if done and st != "Completed":      # a filled Completed Date means the task is finished
