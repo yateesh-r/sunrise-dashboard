@@ -257,6 +257,220 @@ def read_gsheet():
     return out
 
 
+
+# ---- Whole-workbook loader (feeds the screen at /api/raw and the e-mail/alert logic) ----
+IPR_KEEP = ["IPR Reference", "IPR Date", "Department", "Requester", "Item Description", "Vendor Name",
+            "IPR Amount (Excluding GST)", "Status", "IPR Approved Amount", "IA Team - Accept / Reject", "PO Number",
+            "PO Date", "PO & IPR Status", "PO Status", "Remarks", "Budget Head", "Payment Date", "Amount Paid"]
+RAW_FAMILIES = [["Tasks"], ["Alerts"], ["IPR Tracker", "IPR Tracker ", "IPR", "IPRTracker"], ["Complaints"],
+                ["Events", "Event", "Event Planner"], ["SafetyTips", "Safety Tips"], ["Work Permits - This Month", "Work Permits"],
+                ["Breakdown Tracker"], ["Paid parking", "Paid Parking"], ["Incidents This Month", "Incidents"],
+                ["Phase 2 -Tracker ", "Phase 2 -Tracker", "Phase 2 - Tracker", "Phase 2 Tracker"], ["BSC Monthly Update"],
+                ["Compliance Tracker ", "Compliance Tracker"], ["FollowUps"], ["Escalation"]]
+RAW_INFO = {}
+
+
+def conv_cell(c):
+    """Excel cell -> JSON value. Dates become 'YYYY-MM-DD' (plus 'THH:MM' when a time is present)."""
+    if c is None:
+        return None
+    if isinstance(c, datetime):
+        return c.strftime("%Y-%m-%d") + (c.strftime("T%H:%M") if (c.hour or c.minute) else "")
+    if isinstance(c, date):
+        return c.isoformat()
+    if isinstance(c, dtime):
+        return c.strftime("%H:%M")
+    if isinstance(c, bool):
+        return c
+    if isinstance(c, float):
+        return int(c) if c.is_integer() else round(c, 6)
+    if isinstance(c, (int,)):
+        return c
+    s = str(c).strip()
+    return s if s != "" else None
+
+
+def clean_aoa(rows, key_hint=None, ipr=False):
+    """Trim a sheet to what the screen needs: drop blank rows/columns and (for IPR) keep only the useful columns."""
+    rows = [[conv_cell(c) for c in r] for r in rows]
+    rows = [r for r in rows if any(c is not None for c in r)]
+    if not rows:
+        return []
+    if ipr:
+        for i, r in enumerate(rows[:8]):
+            if "IPR Reference" in [str(c).strip() if c is not None else "" for c in r]:
+                rows = rows[i:]
+                break
+        head = [" ".join(str(c).split()) if c is not None else "" for c in rows[0]]
+        idx = [head.index(k) for k in IPR_KEEP if k in head]
+        return [[(r[i] if i < len(r) else None) for i in idx] for r in rows]
+    width = 0
+    for r in rows:
+        n = len(r)
+        while n > 0 and r[n - 1] is None:
+            n -= 1
+        width = max(width, n)
+    return [r[:width] + [None] * max(0, width - len(r)) for r in rows]
+
+
+def workbook_to_raw(raw_bytes):
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True, read_only=True)
+    out = {}
+    for ws in wb.worksheets:
+        name = ws.title.strip()
+        if re.fullmatch(r"read\s*me", name, re.I):
+            continue
+        aoa = clean_aoa(sheet_rows(ws), ipr=name.lower().startswith("ipr"))
+        if aoa:
+            out[name] = aoa
+    return out
+
+
+def csv_cell(s):
+    s = (s or "").strip()
+    if not s:
+        return None
+    if re.fullmatch(r"-?\d+", s):
+        return int(s)
+    if re.fullmatch(r"-?\d+\.\d+", s):
+        return float(s)
+    if re.search(r"\d{4}|\d{1,2}[-/ ][A-Za-z]{3}", s):
+        for f in DATE_FORMATS:
+            try:
+                return datetime.strptime(s, f).date().isoformat()
+            except ValueError:
+                pass
+    return s
+
+
+def gsheet_export_raw(sid):
+    r = requests.get(f"https://docs.google.com/spreadsheets/d/{sid}/export", params={"format": "xlsx"},
+                     timeout=60, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (SunriseDashboard)"})
+    r.raise_for_status()
+    if not r.content.startswith(b"PK"):
+        raise RuntimeError("Google did not return the workbook - set Share > Anyone with the link > Viewer")
+    return workbook_to_raw(r.content)
+
+
+def gsheet_gviz_raw(sid):
+    """Fallback: read each known tab as CSV. Google answers an unknown tab name with the FIRST tab, so skip those."""
+    base = f"https://docs.google.com/spreadsheets/d/{sid}/gviz/tq"
+    first = requests.get(base, params={"tqx": "out:csv"}, timeout=25)
+    first.raise_for_status()
+    first.encoding = "utf-8"
+    if first.text.lstrip().lower().startswith(("<!doctype", "<html")):
+        raise RuntimeError("Google Sheet is not shared: set Share > Anyone with the link > Viewer")
+    out = {}
+    for fam in RAW_FAMILIES:
+        for cand in fam:
+            r = requests.get(base, params={"tqx": "out:csv", "sheet": cand}, timeout=25)
+            if r.status_code in (400, 404):
+                continue
+            r.raise_for_status()
+            r.encoding = "utf-8"
+            if r.text == first.text or not r.text.strip():
+                continue
+            rows = [[csv_cell(c) for c in row] for row in csv.reader(io.StringIO(r.text))]
+            aoa = clean_aoa(rows, ipr=cand.lower().startswith("ipr"))
+            if aoa:
+                out[cand.strip()] = aoa
+            break
+    return out
+
+
+def graph_raw():
+    if os.environ.get("GRAPH_DRIVE_ID") and os.environ.get("GRAPH_ITEM_ID"):
+        url = f"https://graph.microsoft.com/v1.0/drives/{os.environ['GRAPH_DRIVE_ID']}/items/{os.environ['GRAPH_ITEM_ID']}/content"
+    else:
+        url = (f"https://graph.microsoft.com/v1.0/users/{os.environ['GRAPH_USER']}/drive/root:/"
+               f"{os.environ['GRAPH_FILE_PATH'].lstrip('/')}:/content")
+    r = requests.get(url, headers={"Authorization": f"Bearer {graph_token()}"}, timeout=60, allow_redirects=True)
+    r.raise_for_status()
+    return workbook_to_raw(r.content)
+
+
+def local_raw():
+    main = resolve_file(os.environ["EXCEL_PATH"])
+    if not main:
+        raise FileNotFoundError(f"Excel file not found: {os.environ['EXCEL_PATH']}")
+    raw = workbook_to_raw(read_file_bytes(main))
+    ipr_file = resolve_file(os.environ.get("EXCEL_IPR_PATH"))
+    if ipr_file:
+        extra = workbook_to_raw(read_file_bytes(ipr_file))
+        for k, v in extra.items():
+            if k.lower().startswith("ipr"):
+                raw = {n: a for n, a in raw.items() if not n.lower().startswith("ipr")}
+                raw[k] = v
+    return raw
+
+
+def link_raw():
+    link = os.environ["EXCEL_LINK"].strip()
+    if "download=1" not in link:
+        link += ("&" if "?" in link else "?") + "download=1"
+    r = requests.get(link, timeout=60, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (SunriseDashboard)"})
+    r.raise_for_status()
+    if not r.content.startswith(b"PK"):
+        raise RuntimeError("Link did not return an Excel file - set sharing to 'Anyone with the link'")
+    return workbook_to_raw(r.content)
+
+
+def demo_raw():
+    d = get_demo_sheets()
+    names = {"Tasks": "Tasks", "Alerts": "Alerts", "IPRTracker": "IPR Tracker", "Complaints": "Complaints",
+             "Events": "Events", "SafetyTips": "SafetyTips"}
+    renames = {"Alert / Task": "Alert", "Date": None}
+    out = {}
+    for key, title in names.items():
+        recs = d.get(key) or []
+        if not recs:
+            continue
+        cols = list(recs[0].keys())
+        head = [("Date from" if (key == "Events" and c == "Date") else ("Alert" if c == "Alert / Task" else c)) for c in cols]
+        out[title] = clean_aoa([head] + [[r.get(c) for c in cols] for r in recs], ipr=(key == "IPRTracker"))
+    return out
+
+
+def load_raw(name):
+    if name == "onedrive":
+        return graph_raw()
+    if name == "local-excel":
+        return local_raw()
+    if name == "excel-link":
+        return link_raw()
+    if name == "googlesheet":
+        sid = os.environ["GSHEET_ID"].strip()
+        try:
+            return gsheet_export_raw(sid)
+        except Exception as exc:                      # export blocked: fall back to reading the tabs one by one
+            app.logger.warning("Google export failed (%s) - falling back to per-tab CSV", exc)
+            return gsheet_gviz_raw(sid)
+    return demo_raw()
+
+
+def raw_pick(raw, prefix):
+    for k, v in raw.items():
+        if k.strip().lower().startswith(prefix):
+            return v
+    return []
+
+
+def legacy_from_raw(raw):
+    """Header-keyed records for the e-mail / alert logic."""
+    out = {}
+    for key in SHEETS:
+        aoa = []
+        for cand in sheet_names(key):
+            c = cand.strip().lower()
+            hit = next((v for k, v in raw.items() if k.strip().lower() == c), None)
+            if hit:
+                aoa = hit
+                break
+        out[key] = rows_to_records(aoa, HEADER_HINT.get(key)) if aoa else []
+    return out
+
+
 def pick_source():
     """-> (name, reader function)"""
     if graph_configured():
@@ -286,9 +500,20 @@ def pdate(v):
         return v.date()
     if isinstance(v, date):
         return v
-    if isinstance(v, (int, float)):  # Excel serial date
-        return date(1899, 12, 30) + timedelta(days=int(v))
+    if isinstance(v, (int, float)):
+        if 1 <= v <= 31 and float(v).is_integer():      # only a day number typed: that day of this month
+            t = today_local()
+            try:
+                return date(t.year, t.month, int(v))
+            except ValueError:
+                return None
+        return date(1899, 12, 30) + timedelta(days=int(v))   # Excel serial date
     s = str(v).strip()
+    if re.match(r"\d{4}-\d{2}-\d{2}", s):
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d").date()
+        except ValueError:
+            pass
     for f in DATE_FORMATS:
         try:
             return datetime.strptime(s, f).date()
@@ -312,6 +537,15 @@ def fmt(d):
     return d.strftime("%d %b") if d else ""
 
 
+def full_date(v):
+    """A real date (not just a day number like 1 or 12)."""
+    if isinstance(v, (int, float)) and 0 <= v <= 31:
+        return None
+    if isinstance(v, str) and re.fullmatch(r"\d{1,2}(\.0)?", v.strip()):
+        return None
+    return pdate(v)
+
+
 def ptime(v):
     """Time of day from an Excel time cell, a fraction of a day, or text like 09:30 / 9:30 AM."""
     if v in (None, ""):
@@ -323,6 +557,9 @@ def ptime(v):
     if isinstance(v, (int, float)) and 0 <= v < 1:
         mins = round(v * 1440)
         return dtime(mins // 60 % 24, mins % 60)
+    m = re.match(r"\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})", str(v).strip())
+    if m:
+        return dtime(int(m.group(1)), int(m.group(2)))
     s = str(v).strip().lower().replace(" ", "").replace("a.m.", "am").replace("p.m.", "pm").replace(".", ":")
     s = s.replace(":am", "am").replace(":pm", "pm")           # 10.am -> 10am, 23.33 -> 23:33
     for f in ("%H:%M", "%H:%M:%S", "%I:%M%p", "%I%p", "%H"):
@@ -496,10 +733,11 @@ def build_events(rows, today):
             continue
         if any(k in str(r.get("Status") or "").lower() for k in ("complet", "cancel", "done", "closed")):
             continue
-        d = pdate(r.get("Date") or r.get("Event Date"))
-        if d is not None and d < today:
+        d = pdate(r.get("Date") or r.get("Event Date") or r.get("Date from"))
+        end = pdate(r.get("Date To")) or d
+        if end is not None and end < today:
             continue
-        out.append({"event": name, "date": fmt(d) if d else "TBD", "days": (d - today).days if d else 999,
+        out.append({"event": name, "date": fmt(d) if d else "TBD", "days": max(0, (d - today).days) if d else 999,
                     "venue": str(r.get("Venue", "")), "owner": str(r.get("Owner", "")),
                     "prep": max(0, min(100, int(num(r.get("Preparation %") or r.get("Preparation") or r.get("Prep %"))))), "_d": d or date.max})
     out.sort(key=lambda e: e["_d"])
@@ -680,7 +918,7 @@ def build_alerts(rows, now):
     items = []
     for r in rows:
         text = str(r.get("Alert / Task") or r.get("Alert") or r.get("Task") or "").strip()
-        d = pdate(r.get("Alert Date"))
+        d = full_date(r.get("Alert Date")) or full_date(r.get("Alert Time")) or pdate(r.get("Alert Date"))
         if not text or not d:
             continue
         if any(k in str(r.get("Status") or "").lower() for k in ("done", "closed", "complete", "cancel", "stop")):
@@ -752,29 +990,41 @@ def build_payload(sheets, source):
 # =============================================================================
 #  Cache: answer instantly, refresh in the background
 # =============================================================================
-_cache = {"ts": 0, "payload": None}
+_cache = {"ts": 0, "payload": None, "raw": None, "version": ""}
 _lock = threading.Lock()
 _state = {"refreshing": False}
 
 
 def compute_payload():
-    name, reader = pick_source()
+    """-> (payload for /api/data, raw workbook for /api/raw)."""
+    name, _ = pick_source()
     try:
-        payload = build_payload(reader(), name)
+        raw = load_raw(name)
+        RAW_INFO.clear()
+        for k, a in raw.items():
+            RAW_INFO[k] = {"rows_read": max(0, len(a) - 1), "headers": [str(c) for c in a[0] if c is not None][:16]}
+        payload = build_payload(legacy_from_raw(raw), name)
         payload["error"] = None
     except Exception as exc:   # keep the last good data on screen and show what went wrong
         app.logger.error("Data refresh failed: %s", exc)
         last = _cache["payload"]
         payload = dict(last) if last else build_payload(get_demo_sheets(), "demo")
         payload["error"] = f"{type(exc).__name__}: {exc}"[:200]
-    return payload
+        raw = None
+    return payload, raw
+
+
+def _store(payload, raw):
+    _cache.update(ts=time.time(), payload=payload)
+    if raw is not None:
+        _cache.update(raw=raw, version=hashlib.sha1(json.dumps(raw, sort_keys=True, default=str).encode()).hexdigest()[:12])
 
 
 def _refresh():
     try:
-        payload = compute_payload()
+        payload, raw = compute_payload()
         with _lock:
-            _cache.update(ts=time.time(), payload=payload)
+            _store(payload, raw)
     finally:
         _state["refreshing"] = False
 
@@ -783,7 +1033,7 @@ def get_payload():
     if _cache["payload"] is None:          # very first request has to wait once
         with _lock:
             if _cache["payload"] is None:
-                _cache.update(ts=time.time(), payload=compute_payload())
+                _store(*compute_payload())
         return _cache["payload"]
     if time.time() - _cache["ts"] >= REFRESH_SECONDS - 2 and not _state["refreshing"]:
         _state["refreshing"] = True
@@ -802,6 +1052,16 @@ def index():
 @app.route("/api/data")
 def api_data():
     resp = jsonify(get_payload())
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/api/raw")
+def api_raw():
+    """Every tab of the workbook, ready for the screen. Also keeps the refresh / e-mail alerts running."""
+    p = get_payload()
+    resp = jsonify({"version": _cache["version"], "source": p.get("source"), "updated": p.get("updated"),
+                    "error": p.get("error"), "raw": _cache["raw"] or {}})
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
@@ -835,7 +1095,7 @@ def debug():
     """Which tab was found for each sheet and how many rows were read (no cell contents are shown)."""
     p = _cache.get("payload") or {}
     al = p.get("alerts", {}) or {}
-    return {"source": pick_source()[0], "sheets": GSHEET_INFO,
+    return {"source": pick_source()[0], "sheets": RAW_INFO,
             "alerts": {"due_now": al.get("due_count"), "upcoming": al.get("upcoming_count"),
                        "mail_ready": al.get("mail_ready"), "mail_error": al.get("mail_error")},
             "server_time_ist": now_local().strftime("%d-%b-%Y %H:%M")}
