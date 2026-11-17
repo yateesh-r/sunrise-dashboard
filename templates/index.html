@@ -515,7 +515,7 @@ function go(i,user){
 }
 let lastRoll=Date.now();
 function rollTick(){
-  if(S.paused||Date.now()<S.pauseUntil||SCENES[S.scene].manual)return;
+  if(S.fixed||S.paused||Date.now()<S.pauseUntil||SCENES[S.scene].manual)return;
   if(Date.now()-lastRoll>=ROLL){let n=S.scene+1;if(SCENES[n%SCENES.length].manual)n=0;go(n,false)}
 }
 function autoScroll(){document.querySelectorAll('.tblwrap[data-auto="1"]').forEach(el=>{if(el.matches(':hover')||el.scrollHeight<=el.clientHeight+2)return;
@@ -574,6 +574,9 @@ addEventListener('resize',()=>{let p=null;try{p=localStorage.getItem('tv')}catch
 /* ---------- boot ---------- */
 async function boot(){
   document.documentElement.classList.toggle('tv',wantTV());fit();tick();setInterval(tick,1000);setInterval(rollTick,500);setInterval(autoScroll,45);
+  try{const q=new URLSearchParams(location.search),sc=parseInt(q.get('scene'),10);
+    if(sc>=1&&sc<=SCENES.length){S.scene=sc-1;S.fixed=true}
+    if(q.get('rotate')==='0')S.fixed=true}catch(e){}
   renderTabs();renderScene();renderTicker();renderWx();
   loadData();setInterval(loadData,60000);
   loadWx();setInterval(loadWx,10*60*1000);
