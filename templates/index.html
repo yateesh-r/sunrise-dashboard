@@ -5,24 +5,24 @@
 /* Layout: sticky command header (logo, clock, weather, upload) over an alert ticker, a scene tab strip with auto-roll progress, one full-width scene, and a safety-tip footer. */
 :root{
   --bg:#EEF1F8; --surface:#FFFFFF; --surface2:#F5F7FC; --ink:#131840; --muted:#59628A; --line:#DCE1F0;
-  --red:#D3242B; --navy:#27368F; --teal:#0E91A0; --amber:#E39A0B; --violet:#7048C8; --green:#1F9D6B; --pink:#D6457F;
-  --good:#17835A; --warn:#B87400; --crit:#C81E26; --info:#2461D6;
-  --good-bg:#E0F4EB; --warn-bg:#FFF1D2; --crit-bg:#FDE4E5; --info-bg:#E3ECFD;
+  --red:#E8590C; --navy:#27368F; --teal:#0E91A0; --amber:#E39A0B; --violet:#7048C8; --green:#1F9D6B; --pink:#D6457F;
+  --good:#17835A; --warn:#B87400; --crit:#D9480F; --info:#2461D6;
+  --good-bg:#E0F4EB; --warn-bg:#FFF1D2; --crit-bg:#FFE8D6; --info-bg:#E3ECFD;
   --head:#27368F; --head-ink:#FFFFFF; --shadow:0 1px 2px rgba(19,24,64,.06),0 4px 14px rgba(19,24,64,.06);
   --font:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0B1030; --surface:#151B45; --surface2:#1B2252; --ink:#EEF1FF; --muted:#A3ACD6; --line:#2B3470;
-  --red:#FF5A5F; --navy:#8FA2FF; --teal:#38C6D4; --amber:#FFC23D; --violet:#A98BFF; --green:#3DD598; --pink:#FF7BAE;
-  --good:#3DD598; --warn:#FFC23D; --crit:#FF6B70; --info:#7BA5FF;
-  --good-bg:#12372E; --warn-bg:#3D3112; --crit-bg:#431A25; --info-bg:#1B2C5E;
+  --red:#FF9A52; --navy:#8FA2FF; --teal:#38C6D4; --amber:#FFC23D; --violet:#A98BFF; --green:#3DD598; --pink:#FF7BAE;
+  --good:#3DD598; --warn:#FFC23D; --crit:#FFA45E; --info:#7BA5FF;
+  --good-bg:#12372E; --warn-bg:#3D3112; --crit-bg:#4A2C12; --info-bg:#1B2C5E;
   --head:#10164A; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0B1030; --surface:#151B45; --surface2:#1B2252; --ink:#EEF1FF; --muted:#A3ACD6; --line:#2B3470;
-  --red:#FF5A5F; --navy:#8FA2FF; --teal:#38C6D4; --amber:#FFC23D; --violet:#A98BFF; --green:#3DD598; --pink:#FF7BAE;
-  --good:#3DD598; --warn:#FFC23D; --crit:#FF6B70; --info:#7BA5FF;
-  --good-bg:#12372E; --warn-bg:#3D3112; --crit-bg:#431A25; --info-bg:#1B2C5E;
+  --red:#FF9A52; --navy:#8FA2FF; --teal:#38C6D4; --amber:#FFC23D; --violet:#A98BFF; --green:#3DD598; --pink:#FF7BAE;
+  --good:#3DD598; --warn:#FFC23D; --crit:#FFA45E; --info:#7BA5FF;
+  --good-bg:#12372E; --warn-bg:#3D3112; --crit-bg:#4A2C12; --info-bg:#1B2C5E;
   --head:#10164A; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35); color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.4;padding-block:0;
@@ -35,7 +35,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 /* header */
 .top{background:var(--head);color:var(--head-ink);border-radius:0 0 18px 18px;margin:0 calc(-1*max(16px,env(safe-area-inset-left,0px)));
   padding:14px max(16px,env(safe-area-inset-left,0px));display:flex;flex-wrap:wrap;gap:14px 28px;align-items:center;position:relative}
-.top::after{content:"";position:absolute;left:0;right:0;bottom:0;height:5px;background:linear-gradient(90deg,var(--red) 0 34%,#fff 34% 36%,#3F57D8 36% 100%);border-radius:0 0 18px 18px;opacity:.95}
+.top::after{content:"";position:absolute;left:0;right:0;bottom:0;height:5px;background:linear-gradient(90deg,#8FA2FF 0 34%,#fff 34% 36%,#3F57D8 36% 100%);border-radius:0 0 18px 18px;opacity:.95}
 .brand{display:flex;align-items:center;gap:16px;min-width:0}
 .logo{background:#fff;border-radius:12px;padding:4px 12px;height:72px;display:flex;align-items:center}
 .logo img{height:64px;width:auto;display:block}
@@ -450,10 +450,10 @@ const SCENES=[
   const age=x=>x.occ?diff(t,x.occ):0;const bk=[['Under 90 days',x=>age(x)<90],['3 – 12 months',x=>age(x)>=90&&age(x)<365],['Over 1 year',x=>age(x)>=365]].map(([k,f])=>({k,v:open.filter(f).length}));
   bd=applyF('b_cat',bd,r=>r.cat);bd=[...bd].sort((a,b)=>(a.occ||'').localeCompare(b.occ||''));
   const comp=D.complaints;
-  return head('Breakdowns & complaints','Equipment faults and tenant tickets')+`<div class="kpis">${kpi('Open breakdowns',open.length,`of ${D.bd.length} logged`,'teal',null,true)+kpi('Past target date',open.filter(x=>x.tgt&&x.tgt<t).length,'target missed','red')+kpi('Oldest open',open.length?Math.round(Math.max(...open.map(age))/30)+' mo':'0','since occurrence','amber')+kpi('Open complaints',comp.filter(c=>!/clos|resolv/i.test(c.st)).length,`${comp.filter(c=>/high/i.test(c.pri)).length} high priority`,'pink')}</div>
+  return head('Breakdowns & complaints','Equipment faults and tenant tickets')+`<div class="kpis">${kpi('Open breakdowns',open.length,`of ${D.bd.length} logged`,'teal',null,true)+kpi('Oldest open',open.length?Math.round(Math.max(...open.map(age))/30)+' mo':'0','since occurrence','amber')+kpi('Open complaints',comp.filter(c=>!/clos|resolv/i.test(c.st)).length,`${comp.filter(c=>/high/i.test(c.pri)).length} high priority`,'pink')}</div>
   <div class="grid"><div class="card"><h3>Breakdowns by category <small>click to filter</small></h3>${bars(cat,{key:'b_cat',field:'cat',single:'--teal'})}</div><div class="card"><h3>Age of open breakdowns</h3>${bars(bk,{colors:['--green','--amber','--red']})}</div></div>
   <div class="grid wide"><div class="card"><h3>Complaints <small>${comp.length} tickets</small></h3>${table('cmp',[{h:'#',k:'no'},{h:'Date',f:r=>esc(fds(r.date))},{h:'Dept',k:'dept'},{h:'Complaint',f:r=>`<b>${esc(r.text)}</b>`},{h:'Assigned',k:'to'},{h:'Priority',f:r=>pill(r.pri,priTone(r.pri))},{h:'Status',f:r=>pill(r.st,stTone(r.st))}],comp,{mh:340})}</div>
-  <div class="card"><h3>Breakdown log <small>${bd.length} shown, oldest first</small></h3>${filtBar('b_cat')}${table('bd',[{h:'SL',k:'sl'},{h:'Since',f:r=>esc(fd(r.occ))},{h:'Category',f:r=>pill(r.cat,'info')},{h:'Equipment',f:r=>`<b>${esc(r.eq)}</b><div class="hint">${esc(r.issue)}</div>`},{h:'Target',f:r=>r.tgt?esc(fd(r.tgt))+(r.tgt<t&&!/clos/i.test(r.st)?' '+pill('missed','crit'):''):'—'},{h:'Status',f:r=>pill(r.st,stTone(r.st))}],bd,{auto:1,mh:340})}</div></div>`}},
+  <div class="card"><h3>Breakdown log <small>${bd.length} shown, oldest first</small></h3>${filtBar('b_cat')}${table('bd',[{h:'SL',k:'sl'},{h:'Since',f:r=>esc(fd(r.occ))},{h:'Category',f:r=>pill(r.cat,'info')},{h:'Equipment',f:r=>`<b>${esc(r.eq)}</b><div class="hint">${esc(r.issue)}</div>`},{h:'Target',f:r=>r.tgt?esc(fd(r.tgt)):'—'},{h:'Status',f:r=>pill(r.st,stTone(r.st))}],bd,{auto:1,mh:340})}</div></div>`}},
  {name:'Procurement (IPR)',c:'--violet',render(){
   const D=S.D;if(!D.ipr.length)return head('Procurement (IPR)')+noData('IPR Tracker');
   let rows=D.ipr;const st=cnt(rows,r=>r.st),dep=cnt(rows,r=>r.dept),flow=cnt(rows,r=>r.flow);
@@ -515,7 +515,7 @@ function go(i,user){
 }
 let lastRoll=Date.now();
 function rollTick(){
-  if(S.paused||Date.now()<S.pauseUntil||SCENES[S.scene].manual)return;
+  if(S.fixed||S.paused||Date.now()<S.pauseUntil||SCENES[S.scene].manual)return;
   if(Date.now()-lastRoll>=ROLL){let n=S.scene+1;if(SCENES[n%SCENES.length].manual)n=0;go(n,false)}
 }
 function autoScroll(){document.querySelectorAll('.tblwrap[data-auto="1"]').forEach(el=>{if(el.matches(':hover')||el.scrollHeight<=el.clientHeight+2)return;
@@ -574,6 +574,9 @@ addEventListener('resize',()=>{let p=null;try{p=localStorage.getItem('tv')}catch
 /* ---------- boot ---------- */
 async function boot(){
   document.documentElement.classList.toggle('tv',wantTV());fit();tick();setInterval(tick,1000);setInterval(rollTick,500);setInterval(autoScroll,45);
+  try{const q=new URLSearchParams(location.search),sc=parseInt(q.get('scene'),10);
+    if(sc>=1&&sc<=SCENES.length){S.scene=sc-1;S.fixed=true}
+    if(q.get('rotate')==='0')S.fixed=true}catch(e){}
   renderTabs();renderScene();renderTicker();renderWx();
   loadData();setInterval(loadData,60000);
   loadWx();setInterval(loadWx,10*60*1000);
