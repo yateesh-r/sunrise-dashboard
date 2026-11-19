@@ -169,6 +169,9 @@ input.search{border:1px solid var(--line);background:var(--surface);color:var(--
 .drop{position:fixed;inset:0;background:rgba(39,54,143,.88);color:#fff;display:none;align-items:center;justify-content:center;font-size:28px;font-weight:800;z-index:50;text-align:center;padding:20px}
 .drop.on{display:flex}
 .panel{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:90px;width:min(440px,calc(100% - 32px));max-height:70vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.3);padding:14px;z-index:40}
+.ibsbar{height:8px;background:var(--surface2);border-radius:6px;overflow:hidden;margin:2px 0 8px}.ibsbar i{display:block;height:100%;background:var(--green)}
+.ibsrow{display:grid;grid-template-columns:96px 1fr auto 46px;gap:10px;align-items:center;padding:4px 0;border-bottom:1px solid var(--surface2);font-size:13px}.ibsrow em{color:var(--muted);font-style:normal}.ibsrow .pc{text-align:right;color:var(--muted);font-weight:700}
+.tv .ibsrow{font-size:14px;padding:3px 0}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:10px;font-weight:700;z-index:60;max-width:90%}
 #tipx{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);padding:6px 10px;border-radius:8px;font-size:12px;font-weight:600;z-index:70;display:none;max-width:260px}
 .colchart{width:100%;height:auto;display:block}
@@ -292,8 +295,9 @@ function build(raw){
   D.phase2=tbl(pick(raw,'phase 2')).map(r=>({client:String(r['Client Name']||'').trim(),bld:String(r.Building||'').trim(),floor:String(r.Floor||'').trim(),sqft:num(r.Sqft),p:typeof r['Fitout Progress (%)']==='number'?pct(r['Fitout Progress (%)']):null,raw:String(r['Fitout Progress (%)']||'')})).filter(r=>r.client);
   D.bsc=tbl(pick(raw,'bsc')).map(r=>({dept:String(r.Department||'').trim(),up:String(g(r,'Documents')||'').trim(),p:pct(g(r,'Completion')),pend:String(g(r,'Peding')||g(r,'Pending')||'').trim()})).filter(r=>r.dept);
   D.comp=tbl(pick(raw,'compliance')).map(r=>({doc:String(g(r,'Documents')||'').trim(),exp:isISO(r['Expiration Date'])?r['Expiration Date'].slice(0,10):'',st:String(r['Status of renewal']||'').trim(),dept:String(r.Department||'').trim()})).filter(r=>r.doc);
-  D.ipr=tbl(pick(raw,'ipr')).map(r=>({ref:String(r['IPR Reference']||'').replace(/^.*IPR\|/,'IPR-'),date:isISO(r['IPR Date'])?r['IPR Date'].slice(0,10):'',dept:deptN(r.Department),item:String(r['Item Description']||'').trim(),vendor:String(r['Vendor Name']||'').trim(),amt:num(r['IPR Amount (Excluding GST)']),st:stN(r.Status),appr:num(r['IPR Approved Amount']),po:String(r['PO Number']||'').trim(),flow:String(r['PO & IPR Status']||'').trim()||'Not set',pos:stN(r['PO Status'])})).filter(r=>r.item||r.ref);
-  D.ipr.forEach(x=>{x.awaited=/^(0|-|na|n\/a)?$/i.test(x.po)&&!/cancel/i.test(x.st)&&!/cancel/i.test(x.flow)});
+  const lcRow=r0=>{const r={};Object.keys(r0).forEach(k=>r[k.trim().toLowerCase()]=r0[k]);return r};
+  D.proc=tbl(pick(raw,'procure')).map(lcRow).map(r=>({sec:String(r.section||'').trim().toUpperCase(),item:String(r.item||'').trim(),n:Number(r.count)||0})).filter(x=>x.sec&&x.item);
+  D.ibs=tbl(pick(raw,'ibs')).map(lcRow).map(r=>({bld:String(r.building||'').trim(),floor:String(r.floor||'').trim(),tenant:String(r.tenant||'').trim(),st:String(r['ibs status']||r.status||'').trim(),pct:(r['% done']===''||r['% done']==null||isNaN(Number(r['% done'])))?null:Number(r['% done']),sup:String(r['support required']||'').trim(),rem:String(r.remarks||'').trim()})).filter(x=>x.floor);
   return D;
 }
 
@@ -313,8 +317,8 @@ function computeAlerts(){
   D.complaints.filter(c=>!/clos|resolv/i.test(c.st)&&/high/i.test(c.pri)).forEach(c=>A.push({sev:'crit',text:`High priority complaint #${c.no}: ${c.text} (${c.dept})`,go:3}));
   D.comp.forEach(c=>{if(!c.exp)return;const d=diff(c.exp,t);if(d<=60)A.push({sev:d<=30?'crit':'warn',text:`${c.doc} expires ${d<0?'(expired) ':'in '+d+' days · '}${fd(c.exp)} · ${c.st||'status not set'}`,go:5})});
   D.events.forEach(e=>{if(!e.from)return;const d=diff(e.from,t);if(d>=0&&d<=14)A.push({sev:'info',text:`Upcoming: ${e.name} on ${fds(e.from)} (${d===0?'today':'in '+d+' days'})`,go:5})});
-  const pa=D.ipr.filter(x=>x.awaited); if(pa.length)A.push({sev:'warn',text:`${pa.length} IPRs waiting for a PO number (${inr(pa.reduce((x,y)=>x+y.amt,0))})`,go:4});
-  const p=D.ipr.filter(x=>/awaiting approval/i.test(x.flow)).length; if(p)A.push({sev:'info',text:`${p} IPRs awaiting approval`,go:4});
+  {const w=pxv('IPR',/awaiting (approval|ia)/i);if(w)A.push({sev:'info',text:`${w} IPRs awaiting approval`,go:4});const b=pxv('IPR',/budget/i);if(b)A.push({sev:'warn',text:`${b} IPRs held for a budget issue`,go:4});
+   const pc=pxv('GRC',/pending/i)+pxv('WCC',/pending/i);if(pc)A.push({sev:'warn',text:`${pc} GRC / WCC pending clarification`,go:4})}
   S.wxAlerts.forEach(a=>A.push(a));
   const rank={crit:0,warn:1,info:2};A.sort((a,b)=>rank[a.sev]-rank[b.sev]);
   return A;
@@ -424,6 +428,7 @@ const head=(t,s)=>`<div class="sh"><h2>${esc(t)}</h2><span>${esc(s||'')}</span><
 const noData=(n)=>`<div class="card empty">${S.loading?'Loading data…':`No “${n}” rows found in the sheet yet.`}</div>`;
 
 /* ---------- scenes ---------- */
+const PX=sec=>S.D.proc.filter(x=>x.sec===sec),sumN=a=>a.reduce((s,x)=>s+x.n,0),pxv=(sec,re)=>sumN(PX(sec).filter(x=>re.test(x.item)));
 const SCENES=[
  {name:'Overview',c:'--navy',render(){
   const D=S.D,t=todayStr();
@@ -431,13 +436,13 @@ const SCENES=[
   const pToday=D.permits.filter(p=>p.iso===t).length, latest=D.permits.length?D.permits.reduce((a,b)=>a>b.iso?a:b.iso,''):'';
   const bo=D.bd.filter(x=>!/clos|done|complet/i.test(x.st)).length;
   const hc=D.complaints.filter(c=>!/clos|resolv/i.test(c.st)).length;
-  const iprOpen=D.ipr.filter(x=>/awaiting|submitted|draft/i.test(x.flow)).length;
+  const iprTot=sumN(PX('IPR')),iprPO=pxv('IPR',/^po received/i),iprOpen=iprTot-iprPO-pxv('IPR',/cancel|hold/i);
   const pk=D.parking.length?D.parking.reduce((a,b)=>a+b.tot,0):0;
   const free=daysFree();
   const A=(S.alertsList||[]).slice(0,7);
   const ptype=cnt(D.permits,p=>p.type);
   return head('Operations at a glance','Click any tile to open its section')+
-  `<div class="kpis">${kpi('Open tasks',openT,`${od} overdue`,'red',1,true)+kpi('Permits today',pToday,`${D.permits.length} this month`,'amber',2,true)+kpi('Open breakdowns',bo,`${D.bd.filter(x=>x.tgt&&x.tgt<t&&!/clos/i.test(x.st)).length} past target`,'teal',3,true)+kpi('Open complaints',hc,'High priority first','pink',3)+kpi('IPRs in pipeline',iprOpen,`${D.ipr.length} raised this year`,'violet',4)+kpi('Parking this month',inr(pk),`${D.parking.length} days reported`,'green',6)+kpi('Incident-free days',free.n,free.sub,'navy',6)}</div>
+  `<div class="kpis">${kpi('Open tasks',openT,`${od} overdue`,'red',1,true)+kpi('Permits today',pToday,`${D.permits.length} this month`,'amber',2,true)+kpi('Open breakdowns',bo,`${D.bd.filter(x=>x.tgt&&x.tgt<t&&!/clos/i.test(x.st)).length} past target`,'teal',3,true)+kpi('Open complaints',hc,'High priority first','pink',3)+kpi('IPRs in pipeline',iprOpen,`${iprPO} PO received`,'violet',4)+kpi('Parking this month',inr(pk),`${D.parking.length} days reported`,'green',6)+kpi('Incident-free days',free.n,free.sub,'navy',6)}</div>
   <div class="grid"><div class="card"><h3>Needs attention <small>${(S.alertsList||[]).length} alerts</small></h3><div class="attn">${A.map(a=>`<button data-go="${a.go??''}"><span class="dot ${a.sev}"></span><span>${esc(a.text)}</span></button>`).join('')||'<div class="empty">All clear</div>'}</div></div>
   <div class="card"><h3>Work permits by type <small>this month</small></h3>${ptype.length?donut(ptype,{center:'permits',label:'Permits by type'}):'<div class="empty">No permits</div>'}</div>
   <div class="card"><h3>Daily parking collection <small>₹</small></h3>${D.parking.length?columns(D.parking.map(p=>({l:p.iso.slice(8),v:p.tot,tip:fd(p.iso)+': '+inr(p.tot)})),{c:'--green',fmt:v=>v>=1000?Math.round(v/1000)+'k':v}):'<div class="empty">No parking data</div>'}</div></div>`}},
@@ -470,18 +475,26 @@ const SCENES=[
   <div class="grid"><div class="card"><h3>Breakdowns by category <small>click to filter</small></h3>${bars(cat,{key:'b_cat',field:'cat',single:'--teal'})}</div><div class="card"><h3>Age of open breakdowns</h3>${bars(bk,{colors:['--green','--amber','--red']})}</div></div>
   <div class="grid wide"><div class="card"><h3>Complaints <small>${comp.length} tickets</small></h3>${table('cmp',[{h:'#',k:'no'},{h:'Date',f:r=>esc(fds(r.date))},{h:'Dept',k:'dept'},{h:'Complaint',f:r=>`<b>${esc(r.text)}</b>`},{h:'Assigned',k:'to'},{h:'Priority',f:r=>pill(r.pri,priTone(r.pri))},{h:'Status',f:r=>pill(r.st,stTone(r.st))}],comp,{mh:340})}</div>
   <div class="card"><h3>Breakdown log <small>${bd.length} shown, oldest first</small></h3>${filtBar('b_cat')}${table('bd',[{h:'SL',k:'sl'},{h:'Since',f:r=>esc(fd(r.occ))},{h:'Category',f:r=>pill(r.cat,'info')},{h:'Equipment',f:r=>`<b>${esc(r.eq)}</b><div class="hint">${esc(r.issue)}</div>`},{h:'Target',f:r=>r.tgt?esc(fd(r.tgt)):'—'},{h:'Status',f:r=>pill(r.st,stTone(r.st))}],bd,{auto:1,mh:340})}</div></div>`}},
- {name:'Procurement (IPR)',c:'--violet',render(){
-  const D=S.D;if(!D.ipr.length)return head('Procurement (IPR)')+noData('IPR Tracker');
-  let rows=D.ipr;const st=cnt(rows,r=>r.st),dep=cnt(rows,r=>r.dept),flow=cnt(rows,r=>r.flow);
-  const mon=[...cnt(rows.filter(r=>r.date),r=>r.date.slice(0,7))].sort((a,b)=>a.k.localeCompare(b.k));
-  rows=applyF('i_st',rows,r=>r.st);rows=applyF('i_dp',rows,r=>r.dept);rows=applyF('i_fl',rows,r=>r.flow);rows=applyF('i_po',rows,r=>r.awaited?'PO awaited':'');
-  const awF=S.f.i_po;rows=[...rows].sort((a,b)=>awF?a.date.localeCompare(b.date):b.date.localeCompare(a.date));
-  const poTile=(()=>{const a=D.ipr.filter(r=>r.awaited),on=S.f.i_po;return `<button class="kpi t-amber fill${on?' on':''}" data-f="i_po" data-field="po" data-v="PO awaited"><div class="k">PO awaited</div><div class="v num">${a.length}</div><div class="s">${inr(a.reduce((x,y)=>x+y.amt,0))} · tap to filter</div></button>`})();
-  const val=D.ipr.reduce((a,b)=>a+b.amt,0),ap=D.ipr.filter(r=>r.st==='Approved');
-  return head('Procurement (IPR)','Internal purchase requests this financial year')+`<div class="kpis">${kpi('IPRs raised',D.ipr.length,inr(val)+' value (ex-GST)','violet',null,true)+kpi('Approved',ap.length,inr(ap.reduce((a,b)=>a+b.appr,0)),'green')+poTile+kpi('Awaiting approval',D.ipr.filter(r=>/awaiting approval/i.test(r.flow)).length,'needs sign-off','amber')+kpi('Submitted for PO',D.ipr.filter(r=>/submitted for po/i.test(r.flow)).length,'with procurement','navy')+kpi('POs open',D.ipr.filter(r=>r.pos==='Open').length,`${D.ipr.filter(r=>r.pos==='Closed').length} closed`,'teal')}</div>
-  <div class="grid"><div class="card"><h3>By status <small>click to filter</small></h3>${donut(st,{key:'i_st',field:'st',center:'IPRs'})}</div><div class="card"><h3>By department</h3>${bars(dep,{key:'i_dp',field:'dept',single:'--violet',max:9})}</div><div class="card"><h3>PO & IPR stage</h3>${bars(flow,{key:'i_fl',field:'flow',single:'--navy'})}</div></div>
-  <div class="grid wide"><div class="card"><h3>IPRs raised per month</h3>${columns(mon.map(m=>({l:MON[+m.k.slice(5)-1],v:m.v,tip:MON[+m.k.slice(5)-1]+' '+m.k.slice(0,4)+': '+m.v})),{c:'--violet',bw:48})}</div>
-  <div class="card"><h3>IPR register <small>${rows.length} shown</small></h3>${filtBar('i_st')}${filtBar('i_dp')}${filtBar('i_fl')}${filtBar('i_po')}${table('ipr',[{h:'Ref',f:r=>`<span style="white-space:nowrap">${esc(r.ref)}</span>`},{h:'Date',f:r=>`<span style="white-space:nowrap">${esc(fds(r.date))}</span>`},{h:'Dept',k:'dept'},{h:'Item',f:r=>`<b>${esc(r.item)}</b><div class="hint">${esc(r.vendor)}</div>`},{h:'Amount',r:1,f:r=>inr(r.amt)},{h:'Status',f:r=>pill(r.st,stTone(r.st))},{h:'Stage',k:'flow'},{h:'PO',f:r=>r.awaited?pill('AWAITED','warn'):esc(r.po||'—')}],rows,{auto:1,mh:340})}</div></div>`}},
+{name:'Procurement',c:'--violet',render(){
+  const D=S.D;if(!D.proc.length)return head('Procurement')+noData('Procurement');
+  const ipr=PX('IPR'),idr=PX('IDR'),amc=PX('AMC');
+  const iT=sumN(ipr),po=pxv('IPR',/^po received/i);
+  const items=a=>a.filter(x=>x.n>0).map(x=>({k:x.item,v:x.n})).sort((p,q)=>q.v-p.v);
+  const gw=(s,re)=>pxv(s,re);
+  const gRows=[{l:'GRC',a:gw('GRC',/raised/i),b:gw('GRC',/pending/i),c:gw('GRC',/current/i)},{l:'WCC',a:gw('WCC',/raised/i),b:gw('WCC',/pending/i),c:gw('WCC',/current/i)}];
+  gRows.push({l:'Total',a:gRows[0].a+gRows[1].a,b:gRows[0].b+gRows[1].b,c:gRows[0].c+gRows[1].c});
+  return head('Procurement','IPR, IDR, AMC, GRC and WCC status')+`<div class="kpis">${kpi('IPRs raised',iT,'this financial year','violet',null,true)+kpi('PO received',po,iT?Math.round(po/iT*100)+'% of IPRs':'','green')+kpi('Awaiting approval',pxv('IPR',/awaiting (approval|ia)/i),'incl. IA team clearance','amber')+kpi('Submitted for PO',pxv('IPR',/submitted for po/i),'with procurement','navy')+kpi('Budget issue',pxv('IPR',/budget/i),'PO to be shared','pink')+kpi('IDRs',sumN(idr),'open','teal')+kpi('AMCs',sumN(amc),'contracts','navy')}</div>
+  <div class="grid"><div class="card"><h3>IPR by status</h3>${donut(items(ipr),{center:'IPRs'})}</div><div class="card"><h3>AMC tracker <small>2026-27</small></h3>${bars(items(amc),{single:'--teal',max:8})}</div><div class="card"><h3>IDR by status</h3>${items(idr).length?bars(items(idr),{single:'--violet',max:8}):'<div class="empty">No IDRs</div>'}</div></div>
+  <div class="card"><h3>GRC and WCC <small>2026-27</small></h3>${table('gw',[{h:'',f:r=>`<b>${esc(r.l)}</b>`},{h:'Raised',r:1,f:r=>r.a},{h:'Pending clarification',r:1,f:r=>r.b},{h:'Current dated invoice',r:1,f:r=>r.c}],gRows,{mh:300})}</div>`}},
+ {name:'IBS tracker',c:'--teal',render(){
+  const D=S.D;if(!D.ibs.length)return head('IBS tracker')+noData('IBS Tracker');
+  const tone=s=>/^completed$/i.test(s)?'good':/partial|wip/i.test(s)?'info':/interior/i.test(s)?'warn':'mute';
+  const n=re=>D.ibs.filter(x=>re.test(x.st)).length;
+  const blds=[...new Set(D.ibs.map(x=>x.bld||'Building'))];
+  const card=b=>{const f=D.ibs.filter(x=>(x.bld||'Building')===b),done=f.filter(x=>/^completed$/i.test(x.st)).length,pc=f.length?Math.round(done/f.length*100):0;
+   return `<div class="card"><h3>${esc(b)} <small>${done} of ${f.length} floors completed · ${pc}%</small></h3><div class="ibsbar"><i style="width:${pc}%"></i></div>${f.map(x=>`<div class="ibsrow"><b>${esc(x.floor)}</b><span>${esc(x.tenant||'—')}${x.sup?`<em> · ${esc(x.sup)}</em>`:''}</span>${pill(x.st||'Not set',tone(x.st))}<span class="pc">${x.pct==null?'':Math.round(x.pct*100)+'%'}</span></div>`).join('')}</div>`};
+  return head('IBS tracker','In-building solution (booster) installation by floor')+`<div class="kpis">${kpi('Floors',D.ibs.length,blds.length+' buildings','navy',null,true)+kpi('Completed',n(/^completed$/i),'fully installed','green')+kpi('Partially completed',n(/partial/i),'remaining area pending','teal')+kpi('WIP',n(/^wip/i),'in progress','amber')+kpi('Yet to start',n(/yet/i),'not started','navy')+kpi('Interior not available',n(/interior/i),'waiting for fit-out','pink')}</div>
+  <div class="grid wide">${blds.map(card).join('')}</div>`}},
  {name:'Projects & compliance',c:'--pink',render(){
   const D=S.D,t=todayStr();const col=p=>p==null?'--muted':p>=85?'--green':p>=50?'--amber':'--red';
   return head('Projects & compliance','Phase 2 fit-outs, BSC, expiring documents and events')+`<div class="grid">
