@@ -266,7 +266,7 @@ RAW_FAMILIES = [["Tasks"], ["Alerts"], ["IPR Tracker", "IPR Tracker ", "IPR", "I
                 ["Events", "Event", "Event Planner"], ["SafetyTips", "Safety Tips"], ["Work Permits - This Month", "Work Permits"],
                 ["Breakdown Tracker"], ["Paid parking", "Paid Parking"], ["Incidents This Month", "Incidents"],
                 ["Phase 2 -Tracker ", "Phase 2 -Tracker", "Phase 2 - Tracker", "Phase 2 Tracker"], ["BSC Monthly Update"],
-                ["Compliance Tracker ", "Compliance Tracker"], ["FollowUps"], ["Escalation"]]
+                ["Compliance Tracker ", "Compliance Tracker"], ["FollowUps"], ["Escalation"], ["Celebrations", "Celebration"]]
 RAW_INFO = {}
 
 
@@ -303,7 +303,9 @@ def clean_aoa(rows, key_hint=None, ipr=False):
                 break
         head = [" ".join(str(c).split()) if c is not None else "" for c in rows[0]]
         idx = [head.index(k) for k in IPR_KEEP if k in head]
-        return [[(r[i] if i < len(r) else None) for i in idx] for r in rows]
+        out = [[(r[i] if i < len(r) else None) for i in idx] for r in rows]
+        out[0] = [head[i] for i in idx]            # header text with single spaces ("PO  Number" -> "PO Number")
+        return out
     width = 0
     for r in rows:
         n = len(r)
