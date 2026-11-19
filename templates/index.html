@@ -67,6 +67,20 @@ button{font:inherit;color:inherit;cursor:pointer}
 .alertpop li{font-size:30px;font-weight:800;margin:14px 0;line-height:1.25}
 .alertpop li small{display:block;font-size:17px;color:var(--muted);font-weight:600;margin-top:2px}
 .alertpop .btn{margin-top:12px;font-size:18px;padding:10px 28px}
+.cele{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 18% 22%,#3F57D8 0,#27368F 45%,#131840 100%);color:#fff;overflow:hidden}
+.cele[hidden]{display:none}
+.cele .in{display:flex;gap:4vw;align-items:center;width:92vw;max-height:90vh;position:relative;z-index:2}
+.cele .pic{flex:0 0 42vw;height:76vh;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:2vw;padding:1.2vw;box-shadow:0 2vh 6vh rgba(0,0,0,.5)}
+.cele .pic img{max-width:100%;max-height:100%;object-fit:contain;border-radius:1.2vw}
+.cele .txt{flex:1;min-width:0}
+.cele .kick{font-size:1.5vw;letter-spacing:.3em;font-weight:700;text-transform:uppercase;opacity:.8;margin-bottom:1.5vh}
+.cele h1{font-size:5.4vw;line-height:1.05;margin:0 0 2.5vh;font-weight:800}
+.cele p{font-size:2.3vw;line-height:1.35;margin:0;opacity:.96;white-space:pre-line}
+.cele .emoji{font-size:14vw;line-height:1;margin-bottom:2vh}
+.cele.noimg .in{justify-content:center;text-align:center}.cele.noimg .pic{display:none}.cele.noimg .txt{flex:0 1 80vw}
+.cele .conf{position:absolute;top:-6vh;width:1vw;height:2vw;opacity:.9;animation:cfall linear infinite;z-index:1}
+@keyframes cfall{to{transform:translateY(118vh) rotate(720deg)}}
+.cele .x{position:absolute;top:2vh;right:2vw;font-size:1.2vw;opacity:.55;z-index:3}
 /* ticker */
 .ticker{margin:14px 0 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;align-items:stretch;overflow:hidden;box-shadow:var(--shadow)}
 .ticker .lbl{background:var(--red);color:#fff;font-weight:800;font-size:12px;letter-spacing:.08em;padding:10px 14px;display:flex;align-items:center;gap:8px;text-transform:uppercase;flex:none}
@@ -217,6 +231,7 @@ html.tv body{padding:0!important}
 <footer class="foot"><div class="tipbar" id="tipbar"></div><div id="fresh"></div></footer>
 </div>
 <div class="alertpop" id="alertpop" hidden></div>
+<div class="cele" id="cele" hidden></div>
 <div id="tipx"></div>
 <div id="panel" class="panel" hidden></div>
 
@@ -267,6 +282,7 @@ function build(raw){
   D.tasks=tbl(pick(raw,'tasks')).filter(r=>String(r.Task||'').trim()).map(r=>({id:r.ID,task:String(r.Task).trim(),owner:String(r.Owner||'').trim()||'Unassigned',pri:String(r.Priority||'').trim(),st:String(r.Status||'').trim(),due:isISO(r['Due Date'])?r['Due Date'].slice(0,10):'',done:isISO(r['Completed Date'])?r['Completed Date'].slice(0,10):''}));
   D.alerts=tbl(pick(raw,'alerts')).map(r=>({date:[r['Alert Date'],r['Alert Time']].find(isISO)||'',text:String(r.Alert||'').trim(),pri:String(r.Priority||'').trim(),st:String(r.Status||'').trim()})).filter(a=>a.text);
   D.complaints=tbl(pick(raw,'complaints')).map(r=>({no:r.Ticket,date:isISO(r.Date)?r.Date.slice(0,10):'',dept:String(r.Department||'').trim(),text:String(r.Complaint||'').trim(),to:String(r['Assigned To']||'').trim(),pri:String(r.Priority||'').trim(),st:String(r.Status||'').trim()})).filter(r=>r.text);
+  D.cele=tbl(pick(raw,'celebrat')).map(r0=>{const r={};Object.keys(r0).forEach(k=>r[k.toLowerCase()]=r0[k]);return{md:mdOf(r.date),title:String(r.title||r.occasion||r.event||'').trim(),msg:String(r.message||r.wish||'').trim(),img:String(r.image||r['image link']||r.photo||'').trim(),st:String(r.status||'').trim()}}).filter(c=>c.md&&c.title&&!/^(off|inactive|no|done|closed)/i.test(c.st));
   D.events=tbl(pick(raw,'events')).map(r=>({name:String(r.Event||'').trim(),from:isISO(r['Date from'])?r['Date from'].slice(0,10):'',to:isISO(r['Date To'])?r['Date To'].slice(0,10):'',venue:String(r.Venue||'').trim(),owner:String(r.Owner||'').trim(),prep:pct(r['Preparation %']),st:String(r.Status||'').trim()})).filter(r=>r.name);
   D.tips=tbl(pick(raw,'safetytips')).map(r=>({date:isISO(r.Date)?r.Date.slice(0,10):'',tip:String(r.Tip||'').trim()})).filter(r=>r.tip);
   D.permits=tbl(pick(raw,'work permits')).map(r=>{const d=dateTime(r.Date);return{sl:r['Sl No'],iso:d?d.iso:'',t:d?d.t:'',type:String(r['Permit Type']||'').trim(),st:String(r.Status||'').trim()}}).filter(r=>r.iso&&isNaN(+r.type)&&r.type);
@@ -527,7 +543,7 @@ function toast(m,ms){const t=document.createElement('div');t.className='toast';t
 const SRC={googlesheet:'Google Sheet','local-excel':'Excel file','excel-link':'Excel link',onedrive:'OneDrive',demo:'DEMO DATA'};
 const hhmm=()=>new Intl.DateTimeFormat('en-IN',{timeZone:TZ,hour:'numeric',minute:'2-digit',hour12:true}).format(new Date());
 function renderFresh(){$('#fresh').innerHTML=esc(S.src||'')+(S.err?` · <b style="color:var(--crit)">${esc(S.err)}</b>`:'')}
-function apply(raw,label,ts){S.raw=raw;S.D=build(raw);S.src=label;S.ts=ts||Date.now();S.loading=false;renderTicker();renderScene(true)}
+function apply(raw,label,ts){S.raw=raw;S.D=build(raw);S.src=label;S.ts=ts||Date.now();S.loading=false;renderTicker();renderScene(true);maybeCele()}
 let lastVer='';
 async function loadData(){
   try{
@@ -540,6 +556,32 @@ async function loadData(){
     else{S.src=label;S.loading=false;if(!Object.keys(S.raw).length)renderScene(true);renderFresh()}
   }catch(e){S.err='Cannot reach the server - showing the last data';S.loading=false;if(!Object.keys(S.raw).length)renderScene(true);renderFresh()}
 }
+/* ---------- celebration screen ---------- */
+const mdOf=v=>{if(v==null||v==='')return '';const s=String(v).trim();let m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);if(m)return m[2]+'-'+m[3];
+  m=/^(\d{1,2})[-\/ .]([A-Za-z]{3,})/.exec(s);if(m){const i=MON.findIndex(x=>x.toLowerCase()===m[2].slice(0,3).toLowerCase());if(i>=0)return String(i+1).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0')}
+  m=/^(\d{1,2})[\/-](\d{1,2})(?:[\/-]\d{2,4})?$/.exec(s);if(m)return String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');return ''};
+function imgUrl(v){v=String(v||'').trim();if(!v)return '';
+  const g=/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=)([\w-]{10,})/.exec(v)||/[?&]id=([\w-]{20,})/.exec(v);
+  if(/drive\.google\.com|docs\.google\.com/.test(v)&&g)return 'https://drive.google.com/thumbnail?id='+g[1]+'&sz=w1920';
+  if(/^https?:\/\//i.test(v)||v[0]==='/')return v;return '/static/celebrations/'+encodeURIComponent(v)}
+let celeTimer=null,celeIdx=0;
+const celeToday=()=>{const md=todayStr().slice(5);return (S.D.cele||[]).filter(c=>c.md===md)};
+function paintCele(c){
+  const el=$('#cele'),u=imgUrl(c.img),cols=['#FFC23D','#3DD598','#FF9A52','#8FA2FF','#fff','#38C6D4','#FF7BAE'];
+  let conf='';for(let i=0;i<46;i++)conf+=`<i class="conf" style="left:${(Math.random()*100).toFixed(1)}%;background:${cols[i%cols.length]};animation-duration:${(5+Math.random()*6).toFixed(1)}s;animation-delay:-${(Math.random()*9).toFixed(1)}s"></i>`;
+  el.className='cele'+(u?'':' noimg');
+  el.innerHTML=conf+`<div class="in"><div class="pic">${u?`<img src="${esc(u)}" alt="" onerror="this.closest('.cele').classList.add('noimg')">`:''}</div><div class="txt">${u?'':'<div class="emoji">🎉</div>'}<div class="kick">${esc(fd(todayStr()))}</div><h1>${esc(c.title)}</h1>${c.msg?`<p>${esc(c.msg)}</p>`:''}</div></div>${S.celePersist?'':'<div class="x">tap to close</div>'}`;
+}
+function showCele(){
+  const list=celeToday(),el=$('#cele');clearTimeout(celeTimer);
+  if(!list.length){el.hidden=true;return false}
+  celeIdx=0;
+  const step=()=>{paintCele(list[celeIdx%list.length]);el.hidden=false;celeIdx++;
+    if(S.celePersist||celeIdx<list.length)celeTimer=setTimeout(step,S.celePersist?30000:20000);
+    else celeTimer=setTimeout(()=>{el.hidden=true},30000)};
+  step();return true}
+function maybeCele(){if(S.fixed&&!S.celePersist)return;if(!S.celeSeen&&celeToday().length){S.celeSeen=true;showCele()}}
+setInterval(()=>{if((S.fixed&&!S.celePersist)||S.celePersist)return;showCele()},10*60*1000);
 /* ---------- alert pop-up ---------- */
 function showPop(list){
   let seen={};try{seen=JSON.parse(localStorage.getItem('seenAlerts')||'{}')}catch(e){}
@@ -576,7 +618,9 @@ async function boot(){
   document.documentElement.classList.toggle('tv',wantTV());fit();tick();setInterval(tick,1000);setInterval(rollTick,500);setInterval(autoScroll,45);
   try{const q=new URLSearchParams(location.search),sc=parseInt(q.get('scene'),10);
     if(sc>=1&&sc<=SCENES.length){S.scene=sc-1;S.fixed=true}
-    if(q.get('rotate')==='0')S.fixed=true}catch(e){}
+    if(q.get('rotate')==='0')S.fixed=true;
+    if(q.get('scene')==='celebrate'){S.fixed=true;S.celePersist=true}}catch(e){}
+  $('#cele').addEventListener('click',()=>{if(S.celePersist)return;clearTimeout(celeTimer);$('#cele').hidden=true});
   renderTabs();renderScene();renderTicker();renderWx();
   loadData();setInterval(loadData,60000);
   loadWx();setInterval(loadWx,10*60*1000);
