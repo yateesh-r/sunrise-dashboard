@@ -99,10 +99,13 @@ def rows_to_records(values, hint=None):
     return recs
 
 
-def sheet_rows(ws, max_blank=120):
-    """Rows of an openpyxl sheet; stops after a long run of empty rows (a sheet can claim 1,000,000+ rows)."""
+def sheet_rows(ws, max_blank=120, hidden=None):
+    """Rows of an openpyxl sheet; stops after a long run of empty rows (a sheet can claim 1,000,000+ rows).
+    `hidden` = set of row numbers hidden by an Excel/Sheets filter; those rows are skipped."""
     rows, blank = [], 0
-    for row in ws.iter_rows(values_only=True):
+    for n, row in enumerate(ws.iter_rows(min_row=1, values_only=True), start=1):
+        if hidden and n in hidden:
+            continue
         if all(c in (None, "") for c in row):
             blank += 1
             if blank >= max_blank:
@@ -315,15 +318,34 @@ def clean_aoa(rows, key_hint=None, ipr=False):
     return [r[:width] + [None] * max(0, width - len(r)) for r in rows]
 
 
+def hidden_rows(raw_bytes):
+    """{sheet title: set of hidden row numbers} - rows hidden by a filter are not shown on the dashboard.
+    Set HIDE_FILTERED=0 to show every row regardless."""
+    if os.environ.get("HIDE_FILTERED", "1") == "0":
+        return {}
+    import openpyxl
+    out = {}
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
+        for ws in wb.worksheets:
+            hs = {r for r, d in ws.row_dimensions.items() if d.hidden}
+            if hs:
+                out[ws.title] = hs
+    except Exception as e:
+        log.warning("hidden-row scan failed: %s", e) if "log" in globals() else None
+    return out
+
+
 def workbook_to_raw(raw_bytes):
     import openpyxl
     wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True, read_only=True)
+    hid = hidden_rows(raw_bytes)
     out = {}
     for ws in wb.worksheets:
         name = ws.title.strip()
         if re.fullmatch(r"read\s*me", name, re.I):
             continue
-        aoa = clean_aoa(sheet_rows(ws), ipr=name.lower().startswith("ipr"))
+        aoa = clean_aoa(sheet_rows(ws, hidden=hid.get(ws.title)), ipr=name.lower().startswith("ipr"))
         if aoa:
             out[name] = aoa
     return out
