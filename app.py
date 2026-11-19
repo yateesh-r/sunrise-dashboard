@@ -265,7 +265,7 @@ def read_gsheet():
 IPR_KEEP = ["IPR Reference", "IPR Date", "Department", "Requester", "Item Description", "Vendor Name",
             "IPR Amount (Excluding GST)", "Status", "IPR Approved Amount", "IA Team - Accept / Reject", "PO Number",
             "PO Date", "PO & IPR Status", "PO Status", "Remarks", "Budget Head", "Payment Date", "Amount Paid"]
-RAW_FAMILIES = [["Tasks"], ["Alerts"], ["IPR Tracker", "IPR Tracker ", "IPR", "IPRTracker"], ["Complaints"],
+RAW_FAMILIES = [["Tasks"], ["Alerts"], ["Procurement", "Procurement ", "Procurement Tracker"], ["IBS Tracker", "IBS Tracker ", "IBS", "IBUS Tracker"], ["Complaints"],
                 ["Events", "Event", "Event Planner"], ["SafetyTips", "Safety Tips"], ["Work Permits - This Month", "Work Permits"],
                 ["Breakdown Tracker"], ["Paid parking", "Paid Parking"], ["Incidents This Month", "Incidents"],
                 ["Phase 2 -Tracker ", "Phase 2 -Tracker", "Phase 2 - Tracker", "Phase 2 Tracker"], ["BSC Monthly Update"],
@@ -478,6 +478,14 @@ def demo_raw():
         cols = list(recs[0].keys())
         head = [("Date from" if (key == "Events" and c == "Date") else ("Alert" if c == "Alert / Task" else c)) for c in cols]
         out[title] = clean_aoa([head] + [[r.get(c) for c in cols] for r in recs], ipr=(key == "IPRTracker"))
+    out["Procurement"] = [["Section", "Item", "Count"], ["IPR", "Awaiting approval", 19], ["IPR", "Draft", 4], ["IPR", "PO received", 204],
+                          ["IPR", "Submitted for PO creation", 6], ["IDR", "Awaiting approval", 1], ["AMC", "Monthly AMC", 18],
+                          ["AMC", "Quarterly AMC", 24], ["GRC", "GRC raised", 185], ["GRC", "Pending clarification", 3],
+                          ["WCC", "WCC raised", 204], ["WCC", "Pending clarification", 8]]
+    out["IBS Tracker"] = [["Building", "Floor", "Tenant", "IBS Status", "% Done", "Support Required", "Remarks"],
+                          ["Building 30", "Basement 1", "Parking", "Completed", 1, None, None],
+                          ["Building 30", "9th Floor", "Page Industries", "WIP", None, None, None],
+                          ["Building 33", "4th Floor", "MNP", "Completed", 1, None, None]]
     return out
 
 
