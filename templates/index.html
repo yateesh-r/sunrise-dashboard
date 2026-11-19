@@ -169,6 +169,7 @@ input.search{border:1px solid var(--line);background:var(--surface);color:var(--
 .drop{position:fixed;inset:0;background:rgba(39,54,143,.88);color:#fff;display:none;align-items:center;justify-content:center;font-size:28px;font-weight:800;z-index:50;text-align:center;padding:20px}
 .drop.on{display:flex}
 .panel{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:90px;width:min(440px,calc(100% - 32px));max-height:70vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.3);padding:14px;z-index:40}
+.grid.wide.emgrid{grid-template-columns:minmax(0,1fr) minmax(0,2.7fr)}@media(max-width:1100px){.grid.wide.emgrid{grid-template-columns:1fr}}
 .ibsbar{height:8px;background:var(--surface2);border-radius:6px;overflow:hidden;margin:2px 0 8px}.ibsbar i{display:block;height:100%;background:var(--green)}
 .ibsrow{display:grid;grid-template-columns:96px 1fr auto 46px;gap:10px;align-items:center;padding:4px 0;border-bottom:1px solid var(--surface2);font-size:13px}.ibsrow em{color:var(--muted);font-style:normal}.ibsrow .pc{text-align:right;color:var(--muted);font-weight:700}
 .tv .ibsrow{font-size:14px;padding:3px 0}
@@ -298,6 +299,7 @@ function build(raw){
   const lcRow=r0=>{const r={};Object.keys(r0).forEach(k=>r[k.trim().toLowerCase()]=r0[k]);return r};
   D.proc=tbl(pick(raw,'procure')).map(lcRow).map(r=>({sec:String(r.section||'').trim().toUpperCase(),item:String(r.item||'').trim(),n:Number(r.count)||0})).filter(x=>x.sec&&x.item);
   D.ibs=tbl(pick(raw,'ibs')).map(lcRow).map(r=>({bld:String(r.building||'').trim(),floor:String(r.floor||'').trim(),tenant:String(r.tenant||'').trim(),st:String(r['ibs status']||r.status||'').trim(),pct:(r['% done']===''||r['% done']==null||isNaN(Number(r['% done'])))?null:Number(r['% done']),sup:String(r['support required']||'').trim(),rem:String(r.remarks||'').trim()})).filter(x=>x.floor);
+  D.em=tbl(pick(raw,'email')).map(r0=>{const r={};Object.keys(r0).forEach(k=>r[k.toLowerCase().replace(/[^a-z0-9]/g,'')]=r0[k]);const w=[1,2,3,4,5].map(n=>{const v=r['week'+n];return v==null?'':String(v).trim()});return{team:String(r.team||r.department||r.dept||'').trim()||'General',cat:String(r.category||r.section||'').trim(),topic:String(r.topic||'').trim(),freq:String(r.frequency||'').trim(),w,rem:String(r.remark||r.remarks||'').trim()}}).filter(x=>x.topic);
   return D;
 }
 
@@ -318,6 +320,7 @@ function computeAlerts(){
   D.comp.forEach(c=>{if(!c.exp)return;const d=diff(c.exp,t);if(d<=60)A.push({sev:d<=30?'crit':'warn',text:`${c.doc} expires ${d<0?'(expired) ':'in '+d+' days · '}${fd(c.exp)} · ${c.st||'status not set'}`,go:5})});
   D.events.forEach(e=>{if(!e.from)return;const d=diff(e.from,t);if(d>=0&&d<=14)A.push({sev:'info',text:`Upcoming: ${e.name} on ${fds(e.from)} (${d===0?'today':'in '+d+' days'})`,go:5})});
   {const w=pxv('IPR',/awaiting (approval|ia)/i);if(w)A.push({sev:'info',text:`${w} IPRs awaiting approval`,go:4});const b=pxv('IPR',/budget/i);if(b)A.push({sev:'warn',text:`${b} IPRs held for a budget issue`,go:4});
+   {const es=emStats(D.em);if(es.pend.length)A.push({sev:'info',text:`${es.pend.length} tenant e-mails pending this week`,go:8})}
    const pc=pxv('GRC',/pending/i)+pxv('WCC',/pending/i);if(pc)A.push({sev:'warn',text:`${pc} GRC / WCC pending clarification`,go:4})}
   S.wxAlerts.forEach(a=>A.push(a));
   const rank={crit:0,warn:1,info:2};A.sort((a,b)=>rank[a.sev]-rank[b.sev]);
@@ -429,6 +432,11 @@ const noData=(n)=>`<div class="card empty">${S.loading?'Loading data…':`No “
 
 /* ---------- scenes ---------- */
 const PX=sec=>S.D.proc.filter(x=>x.sec===sec),sumN=a=>a.reduce((s,x)=>s+x.n,0),pxv=(sec,re)=>sumN(PX(sec).filter(x=>re.test(x.item)));
+const emKind=f=>/need|based/i.test(f)?'need':/1st|month/i.test(f)?'monthly':/weekly|daily|every\s+(mon|tues?|wed(nes)?|thu(rs)?|fri|sat(ur)?|sun)(day)?\b/i.test(f)?'weekly':'need';
+const emDone=v=>v!==''&&!/^(pending|no|not sent|-|—|x)$/i.test(v)&&!/^n\/?a$/i.test(v);
+const emNA=v=>/^n\/?a$/i.test(v);
+const emWeek=()=>Math.min(5,Math.ceil(+todayStr().slice(8,10)/7));
+function emStats(rows){const W=emWeek();let due=0,sent=0,pend=[];rows.forEach(x=>{const k=emKind(x.freq);if(k==='weekly'){if(emNA(x.w[W-1]))return;due++;if(emDone(x.w[W-1]))sent++;else pend.push(x)}else if(k==='monthly'){if(x.w.some(emNA)&&!x.w.some(emDone))return;due++;if(x.w.some(emDone))sent++;else pend.push(x)}});return{W,due,sent,pend}}
 const SCENES=[
  {name:'Overview',c:'--navy',render(){
   const D=S.D,t=todayStr();
@@ -511,6 +519,17 @@ const SCENES=[
   <div class="card"><h3>Parking register</h3>${table('pk',[{h:'Date',f:r=>esc(fd(r.iso))},{h:'2W',r:1,k:'w2'},{h:'4W',r:1,k:'w4'},{h:'Collection',r:1,f:r=>`<b>${inr(r.tot)}</b>`}],[...P].reverse(),{mh:260})}</div></div>
   <div class="grid"><div class="card"><h3>Incidents this month</h3>${inc.length?table('inc',[{h:'Date',f:r=>esc(fd(r.iso))},{h:'Incident',k:'text'}],inc,{mh:200}):`<div class="empty">No incidents recorded. Keep it up.</div>`}</div>
   <div class="tip"><small>Safety tip of the day</small>${esc(tipOfDay())}</div></div>`}},
+ {name:'Email tracker',c:'--navy',render(){
+  const D=S.D;if(!D.em.length)return head('Email tracker')+noData('Email Tracker');
+  const all=emStats(D.em),teams=[...new Set(D.em.map(x=>x.team))];
+  const tm=teams.map(n=>{const s=emStats(D.em.filter(x=>x.team===n));return{k:n,v:s.pend.length,s}});
+  let rows=applyF('e_tm',D.em,r=>r.team);
+  const pct=all.due?Math.round(all.sent/all.due*100):0,W=all.W;
+  const cell=(x,n)=>{const v=x.w[n-1],k=emKind(x.freq);if(emNA(v))return '<span class="hint">n/a</span>';if(emDone(v))return pill(isISO(v)?fds(v):(v.length>8?'Sent':v),'good');if(k==='need'||n>W)return '';if(k==='monthly'&&n>1)return '';return pill('Pending',n===W?'warn':'mute')};
+  const teamCard=tm.map(o=>{const p=o.s.due?Math.round(o.s.sent/o.s.due*100):0;return `<button class="bar${S.f.e_tm&&S.f.e_tm.v===o.k?' on':''}" style="--c:var(${p>=100?'--green':p>=50?'--amber':'--red'})" data-f="e_tm" data-field="team" data-v="${esc(o.k)}"><span class="n">${esc(o.k)}</span><span class="tr"><span class="fl" style="display:block;width:${p}%"></span></span><span class="c">${o.s.sent}/${o.s.due}</span></button>`}).join('');
+  return head('Email tracker',`Tenant e-mails by team · Week ${W} of the month`)+`<div class="kpis">${kpi('Sent this week',`${all.sent}/${all.due}`,pct+'% complete','green',null,true)+kpi('Pending',all.pend.length,'due and not yet sent','amber')+kpi('Teams',teams.length,'sending e-mails','navy')+kpi('Topics',D.em.length,'tracked this month','teal')}</div>
+  <div class="grid wide emgrid"><div class="card"><h3>By team <small>click to filter</small></h3><div class="bars">${teamCard}</div><h3 style="margin-top:14px">Pending now</h3>${all.pend.length?all.pend.slice(0,8).map(x=>`<div class="hint" style="padding:3px 0"><b>${esc(x.team)}</b> · ${esc(x.topic)}</div>`).join(''):'<div class="hint">Everything due has been sent</div>'}</div>
+  <div class="card"><h3>E-mail tracker <small>${rows.length} topics</small></h3>${filtBar('e_tm')}${table('em',[{h:'Team',f:r=>`<span style="white-space:nowrap">${esc(r.team)}</span>`},{h:'Topic',f:r=>`<b>${esc(r.topic)}</b>${r.cat?`<div class="hint">${esc(r.cat)}</div>`:''}`},{h:'Frequency',k:'freq'},...[1,2,3,4,5].map(n=>({h:'Wk '+n+(n===W?' ●':''),f:r=>cell(r,n)})),{h:'Remark',k:'rem'}],rows,{auto:1,mh:640})}</div></div>`}},
  {name:'All data',c:'--navy',manual:true,render(){
   const names=Object.keys(S.raw).filter(n=>S.raw[n]&&S.raw[n].length);if(!S.sheetTab||!names.includes(S.sheetTab))S.sheetTab=names[0];
   const aoa=S.raw[S.sheetTab]||[];const rows=tbl(aoa);const cols=rows.length?Object.keys(rows[0]):[];
