@@ -265,7 +265,7 @@ def read_gsheet():
 IPR_KEEP = ["IPR Reference", "IPR Date", "Department", "Requester", "Item Description", "Vendor Name",
             "IPR Amount (Excluding GST)", "Status", "IPR Approved Amount", "IA Team - Accept / Reject", "PO Number",
             "PO Date", "PO & IPR Status", "PO Status", "Remarks", "Budget Head", "Payment Date", "Amount Paid"]
-RAW_FAMILIES = [["Tasks"], ["Alerts"], ["Procurement", "Procurement ", "Procurement Tracker"], ["IBS Tracker", "IBS Tracker ", "IBS", "IBUS Tracker"], ["Complaints"],
+RAW_FAMILIES = [["Tasks"], ["Alerts"], ["Procurement", "Procurement ", "Procurement Tracker"], ["IBS Tracker", "IBS Tracker ", "IBS", "IBUS Tracker"], ["Complaints"], ["Email Tracker", "Email Tracker ", "Emails", "Email tracker"],
                 ["Events", "Event", "Event Planner"], ["SafetyTips", "Safety Tips"], ["Work Permits - This Month", "Work Permits"],
                 ["Breakdown Tracker"], ["Paid parking", "Paid Parking"], ["Incidents This Month", "Incidents"],
                 ["Phase 2 -Tracker ", "Phase 2 -Tracker", "Phase 2 - Tracker", "Phase 2 Tracker"], ["BSC Monthly Update"],
